@@ -30,8 +30,11 @@ def main():
     rng = np.random.default_rng(0)
     games, lengths, reasons, steps = 0, [], Counter(), 0
     ep_len = np.zeros(N_ENVS, dtype=int)
-    t0 = time.time()
+    t0 = last_report = time.time()
     while games < N_GAMES and steps < MAX_STEPS:
+        if time.time() - last_report > 10:
+            last_report = time.time()
+            print(f"[progress] {time.time() - t0:.0f}s: {games} games, {steps} batched steps", flush=True)
         n_opt = info["num_options"]
         actions = np.array([rng.integers(0, max(1, n)) for n in n_opt], dtype=np.int32)
         obs, reward, term, trunc, info = envs.step(actions)

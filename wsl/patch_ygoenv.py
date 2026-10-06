@@ -150,6 +150,17 @@ PATCHES = [
      "  }\n"
      "  return it->second;\n"
      "}"),
+    # Quiet a known ygo-agent TODO (option spec missing from the obs index; it falls back to idx 1)
+    # that otherwise dumps the whole index to stdout. Set YGOSIM_TRACE_SPEC=1 to see it.
+    ("edopro/edopro.h",
+     "        fmt::println(\"Spec2index:\");\n"
+     "        for (auto &[k, v] : spec2index) {\n"
+     "          fmt::println(\"{}: {}\", k, v);\n"
+     "        }\n",
+     "        if (std::getenv(\"YGOSIM_TRACE_SPEC\")) {\n"
+     "          fmt::println(stderr, \"[ygosim] option spec {} not in obs index ({} entries)\", spec,\n"
+     "                       spec2index.size());\n"
+     "        }\n"),
     # Diagnostics: log every duel result (env var YGOSIM_TRACE_WIN=1).
     ("edopro/edopro.h", "      auto reason = read_u8();\n      auto winner = players_[player];",
      "      auto reason = read_u8();\n"
