@@ -82,6 +82,13 @@ P2 loses next turn"; fitted weights (§5.1) and eventually the pilot's value hea
   min(goldfish board, boards after each interruption).
 - First result (TCG Elfnote vs Ash, 4 openings): worst case 2.04 → 2.90 for a goldfish cost of
   3.51 → 3.04. The new lines include one that gives Ash no window at all.
+- **Expected value, not pure max-min.** Pure max-min assumes P2 always holds the trap, and it once traded
+  2 points of board for 0.03 of worst case. Selection now maximizes p·worst + (1−p)·goldfish, where p is
+  the chance P2 holds the trap (`--p-trap`, default 0.6; later from field hand-trap counts and the
+  hypergeometric). p = 1 recovers max-min.
+- 10-opening results (max-min, before the EV switch), board through the best-timed trap:
+  TCG Elfnote 2.70 ± 0.27 (Ash), 2.85 ± 0.31 (Imperm); projected Ars Magna Elfnote 2.75 ± 0.31,
+  3.03 ± 0.33. Ars Magna is ahead everywhere but within noise.
 
 ## 4. Search methods
 

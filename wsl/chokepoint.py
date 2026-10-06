@@ -172,7 +172,10 @@ def main():
     ap.add_argument("--pair", action="store_true",
                     help="opponent holds two hand traps (e.g. --opponent ash-imperm): nest the second")
     ap.add_argument("--robust", type=int, default=0, metavar="ROUNDS",
-                    help="max-min (THEORY §2.3): best worst-case line over ROUNDS of iterated best response")
+                    help="robust line (THEORY §2.3): candidates from ROUNDS of iterated best response")
+    ap.add_argument("--p-trap", type=float, default=0.6,
+                    help="chance P2 holds the trap; picks the line maximizing p*worst + (1-p)*goldfish "
+                         "(1.0 = pure max-min)")
     args = ap.parse_args()
 
     names = load(args.deck)
@@ -189,7 +192,8 @@ def main():
             evaluated = robust_lines(envs, args.rollouts, h, args.generations, args.cont_generations,
                                      args.alpha, tags, ids, probe, args.robust)
             goldfish, g_trials = evaluated[0]
-            line, trials = max(evaluated, key=lambda e: worst_case(*e))
+            # Expected board: P2 holds the trap with probability p (then times it best), else passes.
+            line, trials = max(evaluated, key=lambda e: args.p_trap * worst_case(*e) + (1 - args.p_trap) * e[0].score)
         else:
             goldfish, g_trials = map_opening(envs, args.rollouts, h, args.generations, args.cont_generations,
                                              args.alpha, tags, ids, probe)
