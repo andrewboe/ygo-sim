@@ -240,6 +240,12 @@ PATCHES = [
     ("edopro/edopro.h",
      "  void Reset() override {\n",
      "  void Reset() override {\n"
+     "    if (duel_started_) {  // ygosim: resetting mid-duel leaked the old duel (and its Lua state)\n"
+     "      std::unique_lock<std::shared_timed_mutex> end_lock(duel_mtx);\n"
+     "      YGO_EndDuel(pduel_);\n"
+     "      end_lock.unlock();\n"
+     "      duel_started_ = false;\n"
+     "    }\n"
      "    if (duel_seed_ >= 0) {  // ygosim: every env deals opening (duel_seed + set_opening(n))\n"
      "      gen_.seed(static_cast<uint64_t>(duel_seed_ + g_ygosim_opening.load()));\n"
      "    }\n"),
