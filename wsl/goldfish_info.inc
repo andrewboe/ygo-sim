@@ -57,6 +57,9 @@
   void ygosim_write_info(State &state) {
     state["info:turn"_] = turn_count_;
     state["info:msg"_] = msg_;
+    state["info:turn_player"_] = static_cast<int>(tp_);
+    state["info:lp_"_][0] = lp_[0];
+    state["info:lp_"_][1] = lp_[1];
     if (!duel_started_) {
       return;  // duel ended and was destroyed (_duel_end); nothing left to query
     }

@@ -85,8 +85,37 @@ def interruption_trials(envs, k, opening, line, cont_gens, alpha, tags, ids, pro
                 trials.append({"step": w.step, "after": ids.get(w.p1_card, "?"), "after_id": w.p1_card,
                                "card_id": card_, "card": ids.get(card_, "?"),
                                "target": ids.get(target, "") if target else "", "plan": plan,
-                               "prefix_len": w.step, "score": best.score, "reply": best.actions})
+                               "prefix_len": w.step, "score": best.score, "reply": best.actions,
+                               "line": best})  # P1's continuation (with its own later windows); not logged
     return sorted(trials, key=lambda r: r["score"])
+
+
+def pair_trials(envs, k, opening, line, first_trials, cont_gens, alpha, tags, ids, probe, top=3) -> list[dict]:
+    """Two interruptions (e.g. Ash + Impermanence), nested (THEORY §2, multiple interruptions).
+
+    The first is chosen from the `top` best single-interruption timings per hand trap; for each, the
+    second is mapped exactly on the continuation P1 plays after the first. Each entry's score is P1's
+    board after both, or after only the first if P1's continuation gives no window for the second."""
+    by_trap = defaultdict(list)
+    for t in first_trials:
+        by_trap[t["card_id"]].append(t)
+    out = []
+    for trap, trials in by_trap.items():
+        for first in trials[:top]:
+            # first["line"] is P1's best continuation after the first interruption; its windows are
+            # the second hand trap's chances (the first trap is spent, so it can't appear again).
+            seconds = interruption_trials(envs, k, opening, first["line"], cont_gens, alpha, tags, ids, probe)
+            second = seconds[0] if seconds and seconds[0]["score"] < first["score"] else None
+            out.append({**first, "then": second, "score": second["score"] if second else first["score"]})
+    return sorted(out, key=lambda r: r["score"])
+
+
+def loggable(trial: dict) -> dict:
+    """A trial without in-memory rollouts, for the JSONL training log."""
+    t = {k: v for k, v in trial.items() if k not in ("line", "then")}
+    if trial.get("then"):
+        t["then"] = loggable(trial["then"])
+    return t
 
 
 def worst_case(line, trials) -> float:
@@ -140,6 +169,8 @@ def main():
     ap.add_argument("--alpha", type=float, default=1.0)
     ap.add_argument("--seed", type=int, default=1000)
     ap.add_argument("--no-probe", action="store_true", help="tag-based board score instead of probing")
+    ap.add_argument("--pair", action="store_true",
+                    help="opponent holds two hand traps (e.g. --opponent ash-imperm): nest the second")
     ap.add_argument("--robust", type=int, default=0, metavar="ROUNDS",
                     help="max-min (THEORY §2.3): best worst-case line over ROUNDS of iterated best response")
     args = ap.parse_args()
@@ -163,11 +194,17 @@ def main():
             goldfish, g_trials = map_opening(envs, args.rollouts, h, args.generations, args.cont_generations,
                                              args.alpha, tags, ids, probe)
             line, trials = goldfish, g_trials
+        if args.pair:  # both hand traps: nest the second inside P1's reply to the first
+            trials = pair_trials(envs, args.rollouts, h, line, trials, args.cont_generations, args.alpha,
+                                 tags, ids, probe)
+            if not args.robust:
+                g_trials = trials
         row = {"hand": h, "goldfish": goldfish.score, "goldfish_worst": worst_case(goldfish, g_trials),
                "line": line.score, "worst": worst_case(line, trials), "windows": len(line.windows)}
         rows.append(row)
         log.write(json.dumps({**row, "deck": args.deck, "opponent": args.opponent, "seed": args.seed,
-                              "actions": line.actions[:line.turn1_len], "trials": trials}) + "\n")
+                              "actions": line.actions[:line.turn1_len],
+                              "trials": [loggable(t) for t in trials]}) + "\n")
         log.flush()
         if not trials:
             print(f"hand {h:3}: {line.score:5.2f}  no window for {args.opponent} on this line", flush=True)
@@ -175,6 +212,9 @@ def main():
         worst = trials[0]
         choke_cards[worst["after"]] += 1
         target = f", then picking {worst['target']}" if worst["target"] else ""  # target or forced choice
+        if worst.get("then"):
+            nxt = worst["then"]
+            target += f"; then {nxt['card']} after {nxt['after']} (step {nxt['step']})"
         robust = (f"  [max-min line: goldfish {line.score:.2f}, worst {row['worst']:.2f} vs best goldfish line "
                   f"{goldfish.score:.2f}, worst {row['goldfish_worst']:.2f}]") if args.robust else ""
         print(f"hand {h:3}: {line.score:5.2f} -> {worst['score']:5.2f} with {worst['card']}{target} "

@@ -230,6 +230,8 @@ PATCHES = [
      "        \"info:win_reason\"_.Bind(Spec<int>({}, {-1, 1})));",
      "        \"info:win_reason\"_.Bind(Spec<int>({}, {-1, 1})),\n"
      "        \"info:turn\"_.Bind(Spec<int>({})),\n"
+     "        \"info:turn_player\"_.Bind(Spec<int>({})),\n"
+     "        \"info:lp_\"_.Bind(Spec<int>({2})),\n"
      "        \"info:msg\"_.Bind(Spec<int>({})),\n"
      "        \"info:board_\"_.Bind(Spec<int>({2, 7})),\n"
      "        \"info:field_codes_\"_.Bind(Spec<int>({2, 13})),\n"
