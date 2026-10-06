@@ -14,6 +14,15 @@ Simulation-driven Yu-Gi-Oh! deck optimization, seeded from the current TCG meta.
 
 LLM use stays optional and batched (one call proposes many edits). The simulation itself costs no tokens.
 
+## Matches are best-of-3 with side decking
+
+Competitive results are match results, so matchups are scored as Bo3 matches, not single games:
+
+- Game 1 uses main decks, with a coin flip for who goes first.
+- Games 2 and 3 use post-side lists: each deck's side plan for that opponent, built from its side deck. The loser of the previous game chooses turn order.
+
+The simulator estimates four game win rates per matchup: pre-side going first, pre-side going second, post-side going first, and post-side going second. The match win rate then follows exactly from those numbers, so Bo3 costs no more simulation than single games. The side plan (which cards come in and out per matchup) becomes part of what the optimizer searches.
+
 ## Setup (phase 1)
 
 ```
