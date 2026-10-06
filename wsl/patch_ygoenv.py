@@ -161,6 +161,52 @@ PATCHES = [
      "          fmt::println(stderr, \"[ygosim] option spec {} not in obs index ({} entries)\", spec,\n"
      "                       spec2index.size());\n"
      "        }\n"),
+    # Goldfish/search support: config, info specs, deterministic resets, lite mode.
+    ("edopro/edopro.h",
+     "                    \"max_multi_select\"_.Bind(5), \"record\"_.Bind(false));",
+     "                    \"max_multi_select\"_.Bind(5), \"record\"_.Bind(false),\n"
+     "                    \"lite\"_.Bind(false), \"duel_seed\"_.Bind(int64_t(-1)));"),
+    ("edopro/edopro.h",
+     "        \"info:win_reason\"_.Bind(Spec<int>({}, {-1, 1})));",
+     "        \"info:win_reason\"_.Bind(Spec<int>({}, {-1, 1})),\n"
+     "        \"info:turn\"_.Bind(Spec<int>({})),\n"
+     "        \"info:msg\"_.Bind(Spec<int>({})),\n"
+     "        \"info:board_\"_.Bind(Spec<int>({2, 7})),\n"
+     "        \"info:field_codes_\"_.Bind(Spec<int>({2, 13})),\n"
+     "        \"info:option_kinds_\"_.Bind(Spec<uint8_t>({conf[\"max_options\"_]})));"),
+    ("edopro/edopro.h",
+     "        verbose_(spec.config[\"verbose\"_]), record_(spec.config[\"record\"_]),",
+     "        verbose_(spec.config[\"verbose\"_]), record_(spec.config[\"record\"_]),\n"
+     "        lite_(spec.config[\"lite\"_]), duel_seed_(spec.config[\"duel_seed\"_]),"),
+    ("edopro/edopro.h",
+     "  void Reset() override {\n",
+     "  void Reset() override {\n"
+     "    if (duel_seed_ >= 0) {  // ygosim: reset n replays duel seed (duel_seed + n) in every env\n"
+     "      gen_.seed(static_cast<uint64_t>(duel_seed_ + ygosim_resets_++));\n"
+     "    }\n"),
+    ("edopro/edopro.h",
+     "    state[\"info:win_reason\"_] = win_reason;\n",
+     "    state[\"info:win_reason\"_] = win_reason;\n"
+     "    ygosim_write_info(state);\n"),
+    ("edopro/edopro.h",
+     "    SpecIndex spec2index;\n    _set_obs_cards(state[\"obs:cards_\"_], spec2index, to_play_);",
+     "    if (lite_) {\n"
+     "      if (n_options > max_options()) {\n"
+     "        options_.resize(max_options());\n"
+     "      }\n"
+     "      state[\"info:num_options\"_] = static_cast<int>(options_.size());\n"
+     "      return;\n"
+     "    }\n"
+     "    SpecIndex spec2index;\n    _set_obs_cards(state[\"obs:cards_\"_], spec2index, to_play_);"),
+    ("edopro/edopro.h",
+     "            callback_(0);\n"
+     "            update_h_card_ids(to_play_, 0);\n"
+     "            update_history_actions(to_play_, 0);",
+     "            callback_(0);\n"
+     "            if (!lite_) {\n"
+     "              update_h_card_ids(to_play_, 0);\n"
+     "              update_history_actions(to_play_, 0);\n"
+     "            }"),
     # Diagnostics: log every duel result (env var YGOSIM_TRACE_WIN=1).
     ("edopro/edopro.h", "      auto reason = read_u8();\n      auto winner = players_[player];",
      "      auto reason = read_u8();\n"
@@ -190,6 +236,8 @@ REGION_PATCHES = [
     # Query buffers are now tagged records; the 2024 fixed-offset parsers misread every card.
     ("edopro/edopro.h", "  Card get_card(PlayerId player, uint8_t loc, uint8_t seq) {\n",
      "  std::vector<Card> read_cardlist(bool extra", os.path.join(HERE, "query_parser.inc")),
+    ("edopro/edopro.h", "  int GetSuitableReturn(uint32_t maxseq, uint32_t size) {",
+     "  int GetSuitableReturn(uint32_t maxseq, uint32_t size) {", os.path.join(HERE, "goldfish_info.inc")),
     # Zero-length region = insert the file before `end`.
     ("edopro/edopro.h", "  int GetSuitableReturn(uint32_t maxseq, uint32_t size) {",
      "  int GetSuitableReturn(uint32_t maxseq, uint32_t size) {", os.path.join(HERE, "extra_messages.inc")),
