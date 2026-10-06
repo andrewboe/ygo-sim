@@ -212,13 +212,14 @@ def main():
         worst = trials[0]
         choke_cards[worst["after"]] += 1
         target = f", then picking {worst['target']}" if worst["target"] else ""  # target or forced choice
+        how = f"{worst['card']} after {worst['after']} (step {worst['step']}){target}"
         if worst.get("then"):
             nxt = worst["then"]
-            target += f"; then {nxt['card']} after {nxt['after']} (step {nxt['step']})"
+            how += f", then {nxt['card']} after {nxt['after']} (step {nxt['step']})"
         robust = (f"  [max-min line: goldfish {line.score:.2f}, worst {row['worst']:.2f} vs best goldfish line "
                   f"{goldfish.score:.2f}, worst {row['goldfish_worst']:.2f}]") if args.robust else ""
-        print(f"hand {h:3}: {line.score:5.2f} -> {worst['score']:5.2f} with {worst['card']}{target} "
-              f"after {worst['after']} (step {worst['step']}; {len(trials)} options tried){robust}", flush=True)
+        print(f"hand {h:3}: {line.score:5.2f} -> {worst['score']:5.2f} with {how}; "
+              f"{len(trials)} options tried{robust}", flush=True)
 
     mean = lambda key: np.mean([r[key] for r in rows])
     dead = sum(1 for r in rows if r["windows"] == 0)
