@@ -2,6 +2,7 @@
   // observations (cards/actions/history), which dominate step cost and aren't needed for search.
   bool lite_ = false;
   int64_t duel_seed_ = -1;
+  int ygosim_idle_spins_ = 0;
 
   // Option kinds: 0 = action, 1 = pass/decline (c, f, n...), 2 = end turn (e), 3 = phase move (b, m).
   static uint8_t ygosim_option_kind(int msg, const std::string &opt) {
@@ -53,6 +54,9 @@
   void ygosim_write_info(State &state) {
     state["info:turn"_] = turn_count_;
     state["info:msg"_] = msg_;
+    if (!duel_started_) {
+      return;  // duel ended and was destroyed (_duel_end); nothing left to query
+    }
     static const uint32_t locs[7] = {LOCATION_MZONE, LOCATION_SZONE, LOCATION_HAND, LOCATION_GRAVE,
                                      LOCATION_REMOVED, LOCATION_DECK, LOCATION_EXTRA};
     for (int p = 0; p < 2; ++p) {

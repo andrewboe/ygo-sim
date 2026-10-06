@@ -94,6 +94,35 @@ def cmd_refresh(args):
     print(f"\nSnapshot and changelog written under {DATA_DIR}")
 
 
+def cmd_tournament(args):
+    import json
+
+    import numpy as np
+
+    from .tournament import EventFormat, check_matrix, simulate
+
+    field = json.loads((DATA_DIR / "field" / "field.json").read_text(encoding="utf-8"))
+    m = json.loads(open(args.matrix, encoding="utf-8").read())
+    index = {d: i for i, d in enumerate(m["decks"])}
+    names = [e["deck"] for e in field["entries"] if e["deck"] in index]
+    missing = [e["deck"] for e in field["entries"] if e["deck"] not in index]
+    if missing:
+        print(f"no matchup data for {missing}; left out of the field")
+    full = np.array(m["matrix"], dtype=float)
+    idx = [index[d] for d in names]
+    matrix = full[np.ix_(idx, idx)]
+    check_matrix(matrix)
+    shares = [next(e["weight"] for e in field["entries"] if e["deck"] == d) for d in names]
+    fmt = EventFormat(args.players, args.rounds, args.top_cut, args.draw_rate)
+    r = fmt.resolved()
+    stats = simulate(names, shares, matrix, fmt, args.events, args.seed)
+    print(f"{args.events} events of {r.players} players: {r.rounds} Swiss rounds, top {r.top_cut}\n")
+    print(f"{'field':>6} {'top cut':>8} {'conv':>5} {'cut rate':>8} {'wins':>6}  deck")
+    for row in stats.table():
+        print(f"{row['field_share']:6.1%} {row['top_cut_share']:8.1%} {row['conversion']:5.2f} "
+              f"{row['top_cut_rate']:8.1%} {row['win_rate']:6.1%}  {row['deck']}")
+
+
 def main():
     parser = argparse.ArgumentParser(prog="ygosim")
     sub = parser.add_subparsers(required=True)
@@ -130,6 +159,17 @@ def main():
     field_args(ref)
     ref.add_argument("--force", action="store_true", help="rebuild even if nothing changed")
     ref.set_defaults(func=cmd_refresh)
+
+    tour = sub.add_parser("tournament", help="Monte Carlo YCS-style events over the current field")
+    tour.add_argument("--matrix", required=True,
+                      help='JSON {"decks": [...], "matrix": [[match win rate row vs col]]}')
+    tour.add_argument("--players", type=int, default=263)
+    tour.add_argument("--rounds", type=int, help="Swiss rounds (default: ceil(log2(players)))")
+    tour.add_argument("--top-cut", type=int, help="default: power of two near players/8, 8-64")
+    tour.add_argument("--draw-rate", type=float, default=0.0)
+    tour.add_argument("--events", type=int, default=1000)
+    tour.add_argument("--seed", type=int, default=0)
+    tour.set_defaults(func=cmd_tournament)
 
     args = parser.parse_args()
     args.func(args)

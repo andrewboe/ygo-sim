@@ -23,6 +23,16 @@ Competitive results are match results, so matchups are scored as Bo3 matches, no
 
 The simulator estimates four game win rates per matchup: pre-side going first, pre-side going second, post-side going first, and post-side going second. The match win rate then follows exactly from those numbers, so Bo3 costs no more simulation than single games. The side plan (which cards come in and out per matchup) becomes part of what the optimizer searches.
 
+## Tournaments
+
+`ygosim tournament --matrix M.json` simulates YCS-style events over the current field:
+- **Format:** Swiss rounds (3 points per win, pairings by record, no rematches, byes), then a single-elimination top cut.
+- **Defaults:** `ceil(log2(players))` rounds and a top cut near players/8. 263 players gives 9 rounds and a top 32.
+- **Tiebreak:** opponents' match-win percentage.
+- **Matchups:** Bo3 match win rates from `match.py`.
+
+It reports each deck's share of the field, its share of top cut, its conversion (top-cut share divided by field share), and its win rate. Until the matchup simulator exists, `M.json` has to be supplied.
+
 ## Setup (phase 1)
 
 ```

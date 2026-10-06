@@ -74,11 +74,13 @@ def rollout_batch(envs, k, weights, tags, rng) -> list[Rollout]:
     out = [Rollout() for _ in range(k)]
     active = np.ones(k, dtype=bool)
     for _ in range(MAX_STEPS):
-        ids = np.flatnonzero(active)
-        if not len(ids):
+        if not active.any():
             break
-        acts = np.empty(len(ids), dtype=np.int32)
-        for j, i in enumerate(ids):
+        # Step every env: envpool's sync mode can deadlock waiting for a full batch when only a
+        # subset is stepped. Finished envs get a filler action and their results are ignored.
+        acts = np.zeros(k, dtype=np.int32)
+        for i in np.flatnonzero(active):
+            j = i
             n = int(info["num_options"][i])
             kinds = info["option_kinds_"][i][:n]
             if int(info["to_play"][i]) == 1:  # passive opponent: decline when possible
@@ -89,8 +91,10 @@ def rollout_batch(envs, k, weights, tags, rng) -> list[Rollout]:
             priors = np.array([PRIOR[int(x)] for x in kinds])
             acts[j], _ = sample(hashes, priors, weights, rng)
             out[i].trace.append((hashes, priors, int(acts[j])))
-        _, _, term, trunc, step = envs.step(acts, env_id=ids)
+        _, _, term, trunc, step = envs.step(acts)
         for j, i in enumerate(step["env_id"]):
+            if not active[i]:
+                continue
             for key in INFO_KEYS:
                 info[key][i] = step[key][j]
             if term[j] or trunc[j] or step["turn"][j] >= 2:
@@ -116,6 +120,7 @@ def adapt(weights, best: Rollout, alpha: float) -> None:
 def search_opening(envs, k, opening, generations, alpha, tags, rng) -> tuple[Rollout, float]:
     """Best turn-1 line for one opening; also returns the first (untrained) batch's best score."""
     set_opening(opening)
+    rng = np.random.default_rng(opening)  # per-opening stream: any hand reproduces on its own
     weights = defaultdict(float)
     best, first = Rollout(), None
     for _ in range(generations):
@@ -129,7 +134,9 @@ def search_opening(envs, k, opening, generations, alpha, tags, rng) -> tuple[Rol
 
 
 def make_pool(deck: str, k: int, base_seed: int):
-    return ygoenv.make(task_id="EDOPro-v0", env_type="gymnasium", num_envs=k, num_threads=min(k, 8),
+    # One thread per env: with fewer threads than envs, envpool's sync batching occasionally lost a
+    # result and Recv waited forever (seen at ~16 openings with 32 envs on 8 threads).
+    return ygoenv.make(task_id="EDOPro-v0", env_type="gymnasium", num_envs=k, num_threads=k,
                        seed=0, deck1=deck, deck2=deck, player=-1, max_options=MAX_OPTIONS,
                        n_history_actions=16, play_mode="self", lite=True, duel_seed=base_seed)
 
@@ -150,7 +157,8 @@ def main():
     ap.add_argument("--rollouts", type=int, default=32)
     ap.add_argument("--generations", type=int, default=15)
     ap.add_argument("--alpha", type=float, default=1.0)
-    ap.add_argument("--seed", type=int, default=1000, help="first opening's duel seed")
+    ap.add_argument("--seed", type=int, default=1000, help="duel seed base; opening n uses seed + n")
+    ap.add_argument("--first", type=int, default=0, help="index of the first opening")
     args = ap.parse_args()
 
     names = load(args.deck)
@@ -158,7 +166,7 @@ def main():
     rng = np.random.default_rng(0)
     envs = make_pool(args.deck, args.rollouts, args.seed)
     t0, scores, firsts = time.time(), [], []
-    for h in range(args.hands):
+    for h in range(args.first, args.first + args.hands):
         best, first = search_opening(envs, args.rollouts, h, args.generations, args.alpha, tags, rng)
         scores.append(best.score)
         firsts.append(first)

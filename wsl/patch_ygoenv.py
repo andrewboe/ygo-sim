@@ -150,6 +150,63 @@ PATCHES = [
      "  }\n"
      "  return it->second;\n"
      "}"),
+    # A message that neither offers options nor sends a response leaves the core awaiting forever;
+    # next() then spins on empty process calls. Fail loudly with the culprit instead.
+    ("edopro/edopro.h",
+     "        duel_status_ = YGO_Process(pduel_);\n"
+     "        fdl_ = YGO_GetMessage(pduel_, data_);\n"
+     "        if (fdl_ == 0) {\n"
+     "          continue;\n"
+     "        }\n",
+     "        duel_status_ = YGO_Process(pduel_);\n"
+     "        fdl_ = YGO_GetMessage(pduel_, data_);\n"
+     "        if (fdl_ == 0) {\n"
+     "          if (duel_status_ == OCG_DUEL_STATUS_AWAITING && ++ygosim_idle_spins_ > 1000) {\n"
+     "            throw std::runtime_error(fmt::format(\n"
+     "                \"[ygosim] core awaiting a response nobody sent; last message {}\", msg_));\n"
+     "          }\n"
+     "          continue;\n"
+     "        }\n"
+     "        ygosim_idle_spins_ = 0;\n"),
+    # Script cache self-deadlock: the shared lock was held through OCG_LoadScript, and a script that
+    # loads a not-yet-cached helper (Duel.LoadScript) re-enters and waits on the exclusive lock
+    # forever. Copy the entry under the lock, then call the core unlocked.
+    ("edopro/edopro.h",
+     "  std::string path(name);\n"
+     "  std::shared_lock<std::shared_timed_mutex> lock(scripts_mtx);\n"
+     "  auto it = cards_script_.find(path);\n"
+     "  if (it == cards_script_.end()) {\n"
+     "    lock.unlock();\n"
+     "    int len;\n"
+     "    const char *buf = read_card_script(path, &len);\n"
+     "    std::unique_lock<std::shared_timed_mutex> ulock(scripts_mtx);\n"
+     "    cards_script_[path] = {buf, len};\n"
+     "    it = cards_script_.find(path);\n"
+     "  }\n"
+     "  int len = it->second.len;\n"
+     "  auto res = len && OCG_LoadScript(duel, it->second.buf, static_cast<uint32_t>(len), name);",
+     "  std::string path(name);\n"
+     "  const char *buf = nullptr;\n"
+     "  int len = 0;\n"
+     "  {\n"
+     "    std::shared_lock<std::shared_timed_mutex> lock(scripts_mtx);\n"
+     "    auto it = cards_script_.find(path);\n"
+     "    if (it != cards_script_.end()) {\n"
+     "      buf = it->second.buf;\n"
+     "      len = it->second.len;\n"
+     "    }\n"
+     "  }\n"
+     "  if (buf == nullptr && len == 0) {\n"
+     "    const char *fresh = read_card_script(path, &len);\n"
+     "    std::unique_lock<std::shared_timed_mutex> ulock(scripts_mtx);\n"
+     "    auto [it, inserted] = cards_script_.try_emplace(path, card_script{fresh, len});\n"
+     "    if (!inserted) {\n"
+     "      delete[] fresh;  // another thread cached it first\n"
+     "    }\n"
+     "    buf = it->second.buf;\n"
+     "    len = it->second.len;\n"
+     "  }\n"
+     "  auto res = len && OCG_LoadScript(duel, buf, static_cast<uint32_t>(len), name);"),
     # Quiet a known ygo-agent TODO (option spec missing from the obs index; it falls back to idx 1)
     # that otherwise dumps the whole index to stdout. Set YGOSIM_TRACE_SPEC=1 to see it.
     ("edopro/edopro.h",
