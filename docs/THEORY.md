@@ -54,13 +54,34 @@ definitions apply with nested min/max.
 
 ## 3. Board score S
 
-Interruptions on board plus hand traps kept, with small tiebreaks (`wsl/card_tags.py`):
-face-up quick/negate effects 0.75–1, set traps 0.75–1, floodgates 0.5, hand traps in hand 1,
-+0.1 per card in hand, +0.02 per card on field. Monster hand traps are worth 0 on the field.
+**Probed (default).** After P1's turn, P2 plays a scripted probe turn from its stacked hand: normal
+summon a vanilla monster, activate Upstart Goblin, end turn. P1 passes throughout, but every response
+the engine offers P1 right after those two actions is a *live* interruption. Effects already used on
+turn 1, and effects with no legal target or trigger, aren't offered. Responses offered at phase changes
+don't count (a freely usable quick effect isn't an interruption). Card copies still in hand don't get
+field credit.
 
-Known biases, to fix: effects already used this turn still count (once-per-turn tracking);
-keyword tags mislabel some cards (corrected via `card_tag_overrides.json`). S is a proxy for
-"how likely P2 loses next turn"; the pilot's game value (§5) eventually replaces it.
+S = Σ over live field cards of max(0.5, tag value) + hand traps kept (tag `hand`, 1 each)
+    + 0.1 per card in hand + 0.02 per card on field.
+
+**Tag-only (`--no-probe`).** Every tagged card on the field counts, whether or not its effect was
+used: face-up quick/negate 0.75–1, set traps 0.75–1, floodgates 0.5.
+
+Limits: the probe only exercises responses to a summon and to a spell activation. It misses effects
+that only answer special summons, monster effects or attacks. Tags (`wsl/card_tags.py`, corrected via
+`card_tag_overrides.json`) still weight live cards and value hand traps. S is a proxy for "how likely
+P2 loses next turn"; fitted weights (§5.1) and eventually the pilot's value head (§5) replace it.
+
+**As implemented (`wsl/chokepoint.py`):**
+- *Objective 2:* for each window on P1's line (deduped by game state, capped at 12) and each legal
+  response plus its first follow-up, replay, interrupt, and re-search P1's continuation.
+- *Objective 3, max-min:* iterated best response (`--robust ROUNDS`). P2's best timing on the newest
+  line becomes a rule, "use the trap right after P1 uses card X". P1 re-searches with that rule live in
+  its rollouts, and the learned strategy's uninterrupted (greedy) line becomes the next candidate.
+  Every candidate gets the exact map, and the pick is the max over candidates of
+  min(goldfish board, boards after each interruption).
+- First result (TCG Elfnote vs Ash, 4 openings): worst case 2.04 → 2.90 for a goldfish cost of
+  3.51 → 3.04. The new lines include one that gives Ash no window at all.
 
 ## 4. Search methods
 

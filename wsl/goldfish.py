@@ -34,7 +34,7 @@ MAX_OPTIONS = 24
 KIND_ACTION, KIND_PASS, KIND_END, KIND_PHASE = 0, 1, 2, 3
 PRIOR = {KIND_ACTION: 0.0, KIND_PASS: -1.0, KIND_END: -3.0, KIND_PHASE: -3.0}  # logit offsets
 MAX_STEPS = 300  # per rollout; turn-1 combos are far shorter
-INFO_KEYS = ("num_options", "option_kinds_", "option_hash_", "option_card_", "to_play", "turn", "msg",
+INFO_KEYS = ("num_options", "option_kinds_", "option_hash_", "option_card_", "option_act_", "to_play", "turn", "msg",
              "board_", "field_codes_", "hand_codes_")
 
 
@@ -45,6 +45,7 @@ class Window:
     msg: int         # decision type (16 = chain)
     options: list    # (option index, card id, kind) for each non-pass option
     p1_card: int     # card id of P1's most recent choice, i.e. what P2 would be responding to
+    p1_decisions: int = 0  # P1 decisions so far; windows with the same count are the same game state
 
 
 @dataclass
@@ -55,6 +56,8 @@ class Rollout:
     score: float = float("-inf")
     board: list = field(default_factory=list)  # field codes, negative = face-down
     hand: list = field(default_factory=list)
+    turn1_len: int = 0  # actions[:turn1_len] is the turn-1 line; the rest is the probe turn
+    live: list = field(default_factory=list)  # passcodes of P1 field cards that answered the probe
 
 
 def score_board(field_codes, hand_codes, tags) -> float:
@@ -78,12 +81,80 @@ def sample(hashes, priors, weights, rng) -> tuple[int, np.ndarray]:
     return int(rng.choice(len(p), p=p)), p
 
 
-def rollout_batch(envs, k, weights, tags, rng, prefix=(), p2_plan=()) -> list[Rollout]:
+@dataclass
+class Probe:
+    """Opponent's scripted turn 2 that reveals which of P1's interruptions are still live (THEORY §3):
+    normal summon the vanilla filler, then activate the probe spell, then end the turn. Every
+    response the engine offers P1 right after those actions is a live interruption."""
+    filler_id: int  # code-list ids
+    spell_id: int
+    id_to_code: list  # code-list id -> passcode
+
+
+IDLE = 11
+CHAIN = 16
+
+
+def probe_decision(info, i, n, kinds, state) -> int:
+    """One decision during the probe turn. `state` holds per-env probe progress."""
+    acts_ = info["option_act_"][i][:n]
+    cards = info["option_card_"][i][:n]
+    passes = np.flatnonzero(kinds == KIND_PASS)
+    if int(info["to_play"][i]) == 1:
+        if int(info["msg"][i]) == IDLE:
+            state["armed"] = False
+            for step_name, act, card in (("summoned", ord("s"), state["probe"].filler_id),
+                                         ("activated", ord("v"), state["probe"].spell_id)):
+                if not state[step_name]:
+                    hit = np.flatnonzero((acts_ == act) & (cards == card))
+                    state[step_name] = True
+                    if len(hit):
+                        state["armed"] = True
+                        return int(hit[0])
+            state["finished"] = True
+            ends = np.flatnonzero(kinds == KIND_END)
+            phases = np.flatnonzero(kinds == KIND_PHASE)
+            return int(ends[0]) if len(ends) else int(phases[0]) if len(phases) else 0
+        return int(passes[0]) if len(passes) else 0
+    # P1: note every live response to the probe actions, but don't use them.
+    if int(info["msg"][i]) == CHAIN and state["armed"]:
+        state["offered"].update(int(c) for o, c in enumerate(cards) if kinds[o] != KIND_PASS and c)
+    return int(passes[0]) if len(passes) else 0
+
+
+def score_probed(board, hand, offered_ids, probe: Probe, tags) -> float:
+    """Live interruptions (offered during the probe, weighted by tag value, at least 0.5) for field
+    cards, plus hand traps kept in hand, with tiebreaks. Effects used up on turn 1 aren't offered."""
+    hand = [int(c) for c in hand if c]
+    on_field = {abs(int(c)): int(c) < 0 for c in board if c}
+    total = 0.0
+    for cid in offered_ids:
+        code = probe.id_to_code[cid] if cid < len(probe.id_to_code) else 0
+        # A copy in hand answered (e.g. Ash), not the field copy: hand traps are scored below.
+        if code in on_field and code not in hand:
+            t = tags.get(code, {})
+            total += max(0.5, t.get("set" if on_field[code] else "field", 0.0))
+    total += sum(tags.get(c, {}).get("hand", 0.0) for c in hand)
+    return total + 0.1 * len(hand) + 0.02 * len(on_field)
+
+
+@dataclass(frozen=True)
+class P2Rule:
+    """A live interruption policy for P2: use `trap` at the first window right after P1 uses `trigger`
+    (any window if trigger is 0); answer an immediate follow-up (e.g. a target) with its first option."""
+    trap: int     # code-list card id of the hand trap
+    trigger: int  # code-list card id of the P1 card to respond to; 0 = first legal window
+
+
+def rollout_batch(envs, k, weights, tags, rng, prefix=(), p2_plan=(), probe: Probe | None = None,
+                  p2_rule: P2Rule | None = None, greedy: bool = False) -> list[Rollout]:
     """K rollouts of turn 1 of the current opening.
 
     The first len(prefix) actions are forced (both players), for exact replay to a window. After
     that, P2's next decisions follow p2_plan in order (e.g. [activate Ash] or [activate Imperm,
     target]), then P2 passes. P1 samples from the softmax policy throughout, after the prefix.
+    With `probe`, the opponent's turn 2 probes P1's end board and scores live interruptions only;
+    without it, the turn-1 board is scored from card tags.
     """
     _, info = envs.reset()
     info = {key: info[key].copy() for key in INFO_KEYS}
@@ -91,6 +162,9 @@ def rollout_batch(envs, k, weights, tags, rng, prefix=(), p2_plan=()) -> list[Ro
     active = np.ones(k, dtype=bool)
     plan_pos = np.zeros(k, dtype=int)
     last_p1_card = np.zeros(k, dtype=int)
+    p1_decisions = np.zeros(k, dtype=int)
+    rule_state = np.zeros(k, dtype=int)  # 0 = rule not used yet, 1 = just used, 2 = done
+    probing = [None] * k  # per-env probe state once turn 2 starts
     for _ in range(MAX_STEPS):
         if not active.any():
             break
@@ -101,26 +175,48 @@ def rollout_batch(envs, k, weights, tags, rng, prefix=(), p2_plan=()) -> list[Ro
             n = int(info["num_options"][i])
             kinds = info["option_kinds_"][i][:n]
             t = len(out[i].actions)
+            if probing[i] is not None:
+                acts[i] = probe_decision(info, i, n, kinds, probing[i])
+                out[i].actions.append(int(acts[i]))
+                continue
             if t < len(prefix):
                 acts[i] = prefix[t]
             elif int(info["to_play"][i]) == 1:
+                passes = np.flatnonzero(kinds == KIND_PASS)
+                acting = [(o, int(info["option_card_"][i][o]), int(kinds[o]))
+                          for o in range(n) if kinds[o] != KIND_PASS]
+                rule_hit = None
+                if p2_rule is not None and rule_state[i] == 0 and \
+                        (p2_rule.trigger == 0 or last_p1_card[i] == p2_rule.trigger):
+                    rule_hit = next((o for o, c, _ in acting if c == p2_rule.trap), None)
                 if plan_pos[i] < len(p2_plan):
                     acts[i] = p2_plan[plan_pos[i]]
                     plan_pos[i] += 1
+                elif rule_hit is not None:
+                    acts[i] = rule_hit
+                    rule_state[i] = 1  # next P2 decision may be the follow-up (e.g. a target)
+                elif rule_state[i] == 1 and int(info["msg"][i]) != CHAIN and acting:
+                    acts[i] = acting[0][0]
+                    rule_state[i] = 2
                 else:  # passive opponent: decline when possible, and log the window if it could act
-                    passes = np.flatnonzero(kinds == KIND_PASS)
+                    if rule_state[i] == 1:
+                        rule_state[i] = 2
                     acts[i] = passes[0] if len(passes) else 0
-                    acting = [(o, int(info["option_card_"][i][o]), int(kinds[o]))
-                              for o in range(n) if kinds[o] != KIND_PASS]
                     if acting and len(passes):
-                        out[i].windows.append(Window(t, int(info["msg"][i]), acting, int(last_p1_card[i])))
+                        out[i].windows.append(Window(t, int(info["msg"][i]), acting, int(last_p1_card[i]),
+                                                     int(p1_decisions[i])))
             else:
                 hashes = info["option_hash_"][i][:n].tolist()
                 priors = np.array([PRIOR[int(x)] for x in kinds])
-                acts[i], _ = sample(hashes, priors, weights, rng)
+                if greedy:  # the strategy's own line: most likely choice everywhere
+                    acts[i] = int(np.argmax(np.array([weights[h] for h in hashes]) + priors))
+                else:
+                    acts[i], _ = sample(hashes, priors, weights, rng)
                 out[i].trace.append((hashes, priors, int(acts[i])))
-            if int(info["to_play"][i]) == 0 and info["option_card_"][i][acts[i]]:
-                last_p1_card[i] = int(info["option_card_"][i][acts[i]])
+            if int(info["to_play"][i]) == 0:
+                p1_decisions[i] += 1
+                if info["option_card_"][i][acts[i]]:
+                    last_p1_card[i] = int(info["option_card_"][i][acts[i]])
             out[i].actions.append(int(acts[i]))
         _, _, term, trunc, step = envs.step(acts)
         for j, i in enumerate(step["env_id"]):
@@ -128,11 +224,24 @@ def rollout_batch(envs, k, weights, tags, rng, prefix=(), p2_plan=()) -> list[Ro
                 continue
             for key in INFO_KEYS:
                 info[key][i] = step[key][j]
-            if term[j] or trunc[j] or step["turn"][j] >= 2:
-                active[i] = False
+            ended = term[j] or trunc[j]
+            if probing[i] is None and (ended or step["turn"][j] >= 2):
+                # End of turn 1: snapshot P1's board and hand.
+                out[i].turn1_len = len(out[i].actions)
                 out[i].board = step["field_codes_"][j][0].tolist()
                 out[i].hand = step["hand_codes_"][j][0].tolist()
-                out[i].score = score_board(out[i].board, out[i].hand, tags)
+                if probe is None or ended:
+                    active[i] = False
+                    out[i].score = score_board(out[i].board, out[i].hand, tags)
+                else:
+                    probing[i] = {"probe": probe, "summoned": False, "activated": False,
+                                  "armed": False, "finished": False, "offered": set()}
+            elif probing[i] is not None and (ended or probing[i]["finished"] or step["turn"][j] >= 3):
+                active[i] = False
+                out[i].score = score_probed(out[i].board, out[i].hand, probing[i]["offered"], probe, tags)
+                on_field = {abs(int(c)) for c in out[i].board if c} - {int(c) for c in out[i].hand if c}
+                out[i].live = sorted({probe.id_to_code[c] for c in probing[i]["offered"]
+                                      if c < len(probe.id_to_code)} & on_field)
     return out
 
 
@@ -149,20 +258,23 @@ def adapt(weights, best: Rollout, alpha: float) -> None:
 
 
 def search_opening(envs, k, opening, generations, alpha, tags, rng, prefix=(), p2_plan=(),
-                   rng_salt=0) -> tuple[Rollout, float]:
-    """Best turn-1 line for one opening (optionally continuing after a forced prefix and P2 plan);
-    also returns the first (untrained) batch's best score."""
+                   rng_salt=0, probe: Probe | None = None, p2_rule: P2Rule | None = None,
+                   weights_out: dict | None = None) -> tuple[Rollout, float]:
+    """Best turn-1 line for one opening (optionally continuing after a forced prefix and P2 plan, or
+    against a live P2 rule); also returns the first (untrained) batch's best score."""
     set_opening(opening)
     rng = np.random.default_rng([opening, rng_salt])  # per-opening stream: any hand reproduces alone
     weights = defaultdict(float)
     best, first = Rollout(), None
     for _ in range(generations):
-        batch = rollout_batch(envs, k, weights, tags, rng, prefix, p2_plan)
+        batch = rollout_batch(envs, k, weights, tags, rng, prefix, p2_plan, probe, p2_rule)
         top = max(batch, key=lambda r: r.score)
         first = top.score if first is None else first
         if top.score > best.score:
             best = top
         adapt(weights, best, alpha)
+    if weights_out is not None:
+        weights_out.update(weights)
     return best, first
 
 
@@ -172,6 +284,17 @@ def make_pool(deck: str, k: int, base_seed: int, opponent: str | None = None):
                        seed=0, deck1=deck, deck2=opponent or deck, player=-1, max_options=MAX_OPTIONS,
                        n_history_actions=16, play_mode="self", lite=True, duel_seed=base_seed,
                        shuffle2=opponent is None)
+
+
+def make_probe(names: dict) -> Probe:
+    """Probe using the filler and spell stacked into every _p2__ deck (setup_runtime.py)."""
+    codes = [int(l) for l in open(f"{RUN}/code_list.txt") if l.strip()]
+    by_name = {}
+    for code in codes:
+        by_name.setdefault(names.get(code), code)
+    index = {c: i + 1 for i, c in enumerate(codes)}  # code-list ids are 1-based lines
+    id_to_code = [0] + codes
+    return Probe(index[by_name["Mystical Elf"]], index[by_name["Upstart Goblin"]], id_to_code)
 
 
 def load(deck=None):
@@ -192,21 +315,26 @@ def main():
     ap.add_argument("--alpha", type=float, default=1.0)
     ap.add_argument("--seed", type=int, default=1000, help="duel seed base; opening n uses seed + n")
     ap.add_argument("--first", type=int, default=0, help="index of the first opening")
+    ap.add_argument("--no-probe", action="store_true",
+                    help="score turn-1 boards from card tags instead of probing live interruptions")
     args = ap.parse_args()
 
     names = load(args.deck)
     tags = all_tags()
     rng = np.random.default_rng(0)
-    envs = make_pool(args.deck, args.rollouts, args.seed)
+    probe = None if args.no_probe else make_probe(names)
+    envs = make_pool(args.deck, args.rollouts, args.seed, opponent=None if args.no_probe else "_p2__none")
     t0, scores, firsts = time.time(), [], []
     for h in range(args.first, args.first + args.hands):
-        best, first = search_opening(envs, args.rollouts, h, args.generations, args.alpha, tags, rng)
+        best, first = search_opening(envs, args.rollouts, h, args.generations, args.alpha, tags, rng,
+                                     probe=probe)
         scores.append(best.score)
         firsts.append(first)
         board = [("(set) " if c < 0 else "") + names.get(abs(c), str(c)) for c in best.board if c]
         held = [names.get(c, str(c)) for c in best.hand if c and tags.get(c, {}).get("hand")]
+        live = f" | live: {[names.get(c, str(c)) for c in best.live]}" if probe else ""
         print(f"hand {h:3}: {best.score:5.2f} (random: {first:5.2f}) in {len(best.trace):3} decisions | "
-              f"board: {board} | hand traps held: {held}", flush=True)
+              f"board: {board} | hand traps held: {held}{live}", flush=True)
     dt = time.time() - t0
     s = np.array(scores)
     print(f"\n{args.deck}: {args.hands} openings, {args.rollouts}x{args.generations} rollouts each, {dt:.0f}s")

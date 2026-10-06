@@ -89,6 +89,8 @@
       int32_t card = 0;
       state["info:option_hash_"_][i] = ygosim_option_hash(options_[i], to_play_, &card);
       state["info:option_card_"_][i] = card;
+      // Action letter (idle: s summon, c special summon, r reposition, m set monster, t set, v activate).
+      state["info:option_act_"_][i] = static_cast<uint8_t>(options_[i].empty() ? 0 : options_[i][0]);
     }
   }
 

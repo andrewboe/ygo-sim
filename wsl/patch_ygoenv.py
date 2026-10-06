@@ -236,7 +236,8 @@ PATCHES = [
      "        \"info:hand_codes_\"_.Bind(Spec<int>({2, 15})),\n"
      "        \"info:option_kinds_\"_.Bind(Spec<uint8_t>({conf[\"max_options\"_]})),\n"
      "        \"info:option_hash_\"_.Bind(Spec<int>({conf[\"max_options\"_]})),\n"
-     "        \"info:option_card_\"_.Bind(Spec<int>({conf[\"max_options\"_]})));"),
+     "        \"info:option_card_\"_.Bind(Spec<int>({conf[\"max_options\"_]})),\n"
+     "        \"info:option_act_\"_.Bind(Spec<uint8_t>({conf[\"max_options\"_]})));"),
     ("edopro/edopro.h",
      "        verbose_(spec.config[\"verbose\"_]), record_(spec.config[\"record\"_]),",
      "        verbose_(spec.config[\"verbose\"_]), record_(spec.config[\"record\"_]),\n"

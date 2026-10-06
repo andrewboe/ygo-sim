@@ -50,10 +50,13 @@ def merge_db():
     return all_ids, [os.path.basename(p) for p in extra]
 
 
-# Opponent test decks for interruption studies (THEORY §2): inert vanilla filler with the hand traps
-# stacked on top, used with shuffle2=False so the opening hand is exactly these cards plus filler.
+# Opponent test decks for interruption studies (THEORY §2), dealt in file order (shuffle2=False).
+# Opening hand: the hand traps, plus PROBE_SPELL and the vanilla FILLER, which the opponent uses on its
+# turn to probe which of P1's interruptions are still live (THEORY §3).
 FILLER = "Mystical Elf"
+PROBE_SPELL = "Upstart Goblin"
 HAND_TRAP_SETS = {
+    "none": [],
     "ash": ["Ash Blossom & Joyous Spring"],
     "imperm": ["Infinite Impermanence"],
     "veiler": ["Effect Veiler"],
@@ -73,10 +76,11 @@ def write_p2_decks(out: str) -> int:
             raise KeyError(f"card not found: {name}")
         return row[0]
 
-    filler = code(FILLER)
+    filler, probe = code(FILLER), code(PROBE_SPELL)
     for key, names in HAND_TRAP_SETS.items():
         traps = [code(n) for n in names]
-        main = [filler] * (40 - len(traps)) + traps  # last lines are the top of the deck
+        # Last lines are the top of the deck: the opening 5 are traps + probe spell + filler.
+        main = [filler] * (39 - len(traps)) + [probe] + traps
         with open(f"{out}/_p2__{key}.ydk", "w", newline="\n") as f:
             f.write("#main\n" + "\n".join(map(str, main)) + "\n#extra\n!side\n")
     return len(HAND_TRAP_SETS)
