@@ -173,7 +173,9 @@ PATCHES = [
      "        \"info:msg\"_.Bind(Spec<int>({})),\n"
      "        \"info:board_\"_.Bind(Spec<int>({2, 7})),\n"
      "        \"info:field_codes_\"_.Bind(Spec<int>({2, 13})),\n"
-     "        \"info:option_kinds_\"_.Bind(Spec<uint8_t>({conf[\"max_options\"_]})));"),
+     "        \"info:hand_codes_\"_.Bind(Spec<int>({2, 15})),\n"
+     "        \"info:option_kinds_\"_.Bind(Spec<uint8_t>({conf[\"max_options\"_]})),\n"
+     "        \"info:option_hash_\"_.Bind(Spec<int>({conf[\"max_options\"_]})));"),
     ("edopro/edopro.h",
      "        verbose_(spec.config[\"verbose\"_]), record_(spec.config[\"record\"_]),",
      "        verbose_(spec.config[\"verbose\"_]), record_(spec.config[\"record\"_]),\n"
@@ -181,9 +183,20 @@ PATCHES = [
     ("edopro/edopro.h",
      "  void Reset() override {\n",
      "  void Reset() override {\n"
-     "    if (duel_seed_ >= 0) {  // ygosim: reset n replays duel seed (duel_seed + n) in every env\n"
-     "      gen_.seed(static_cast<uint64_t>(duel_seed_ + ygosim_resets_++));\n"
+     "    if (duel_seed_ >= 0) {  // ygosim: every env deals opening (duel_seed + set_opening(n))\n"
+     "      gen_.seed(static_cast<uint64_t>(duel_seed_ + g_ygosim_opening.load()));\n"
      "    }\n"),
+    ("edopro/edopro.h", "#include <shared_mutex>\n", "#include <shared_mutex>\n#include <atomic>\n"),
+    ("edopro/edopro.h",
+     "static void init_module(const std::string &db_path,",
+     "// ygosim: which opening deterministic (duel_seed >= 0) envs deal on their next reset.\n"
+     "static std::atomic<int64_t> g_ygosim_opening{0};\n"
+     "static void set_opening(int64_t n) { g_ygosim_opening.store(n); }\n\n"
+     "static void init_module(const std::string &db_path,"),
+    ("edopro/edopro.cpp",
+     "  m.def(\"init_module\", &edopro::init_module);",
+     "  m.def(\"init_module\", &edopro::init_module);\n"
+     "  m.def(\"set_opening\", &edopro::set_opening);"),
     ("edopro/edopro.h",
      "    state[\"info:win_reason\"_] = win_reason;\n",
      "    state[\"info:win_reason\"_] = win_reason;\n"
