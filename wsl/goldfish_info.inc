@@ -2,6 +2,7 @@
   // observations (cards/actions/history), which dominate step cost and aren't needed for search.
   bool lite_ = false;
   int64_t duel_seed_ = -1;
+  bool shuffle2_ = true;  // false: player 1's deck is stacked in file order (last main-deck line on top)
   int ygosim_idle_spins_ = 0;
 
   // Option kinds: 0 = action, 1 = pass/decline (c, f, n...), 2 = end turn (e), 3 = phase move (b, m).
@@ -22,7 +23,8 @@
 
   // Stable identity of an option across replays and hand orderings: decision type, action letters,
   // and the codes of the cards it refers to (not their zone/slot). Search policies key on this.
-  int32_t ygosim_option_hash(const std::string &opt, PlayerId player) {
+  // `first_card` receives the code-list id of the first card the option refers to (0 if none).
+  int32_t ygosim_option_hash(const std::string &opt, PlayerId player, int32_t *first_card) {
     uint32_t h = 2166136261u;
     auto mix = [&h](uint32_t v) { h = (h ^ v) * 16777619u; };
     mix(static_cast<uint32_t>(msg_));
@@ -32,6 +34,7 @@
     } catch (const std::exception &) {
       ids.clear();
     }
+    *first_card = ids.empty() ? 0 : static_cast<int32_t>(ids[0]);
     if (ids.empty()) {
       for (char ch : opt) {
         mix(static_cast<uint8_t>(ch));
@@ -83,7 +86,9 @@
     int n_opt = std::min<int>(options_.size(), max_options());
     for (int i = 0; i < n_opt; ++i) {
       state["info:option_kinds_"_][i] = ygosim_option_kind(msg_, options_[i]);
-      state["info:option_hash_"_][i] = ygosim_option_hash(options_[i], to_play_);
+      int32_t card = 0;
+      state["info:option_hash_"_][i] = ygosim_option_hash(options_[i], to_play_, &card);
+      state["info:option_card_"_][i] = card;
     }
   }
 

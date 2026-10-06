@@ -34,13 +34,24 @@ MAX_OPTIONS = 24
 KIND_ACTION, KIND_PASS, KIND_END, KIND_PHASE = 0, 1, 2, 3
 PRIOR = {KIND_ACTION: 0.0, KIND_PASS: -1.0, KIND_END: -3.0, KIND_PHASE: -3.0}  # logit offsets
 MAX_STEPS = 300  # per rollout; turn-1 combos are far shorter
-INFO_KEYS = ("num_options", "option_kinds_", "option_hash_", "to_play", "turn",
+INFO_KEYS = ("num_options", "option_kinds_", "option_hash_", "option_card_", "to_play", "turn", "msg",
              "board_", "field_codes_", "hand_codes_")
 
 
 @dataclass
+class Window:
+    """A point where P2 could interrupt (THEORY §2): a P2 decision with a non-pass option."""
+    step: int        # index into Rollout.actions
+    msg: int         # decision type (16 = chain)
+    options: list    # (option index, card id, kind) for each non-pass option
+    p1_card: int     # card id of P1's most recent choice, i.e. what P2 would be responding to
+
+
+@dataclass
 class Rollout:
-    trace: list = field(default_factory=list)  # (option hashes, priors, chosen index) per own decision
+    trace: list = field(default_factory=list)    # (option hashes, priors, chosen) per searched P1 decision
+    actions: list = field(default_factory=list)  # every action taken, both players, for exact replay
+    windows: list = field(default_factory=list)  # Window, for P2 decisions where it passed
     score: float = float("-inf")
     board: list = field(default_factory=list)  # field codes, negative = face-down
     hand: list = field(default_factory=list)
@@ -67,12 +78,19 @@ def sample(hashes, priors, weights, rng) -> tuple[int, np.ndarray]:
     return int(rng.choice(len(p), p=p)), p
 
 
-def rollout_batch(envs, k, weights, tags, rng) -> list[Rollout]:
-    """K rollouts of turn 1 of the current opening under the softmax policy."""
+def rollout_batch(envs, k, weights, tags, rng, prefix=(), p2_plan=()) -> list[Rollout]:
+    """K rollouts of turn 1 of the current opening.
+
+    The first len(prefix) actions are forced (both players), for exact replay to a window. After
+    that, P2's next decisions follow p2_plan in order (e.g. [activate Ash] or [activate Imperm,
+    target]), then P2 passes. P1 samples from the softmax policy throughout, after the prefix.
+    """
     _, info = envs.reset()
     info = {key: info[key].copy() for key in INFO_KEYS}
     out = [Rollout() for _ in range(k)]
     active = np.ones(k, dtype=bool)
+    plan_pos = np.zeros(k, dtype=int)
+    last_p1_card = np.zeros(k, dtype=int)
     for _ in range(MAX_STEPS):
         if not active.any():
             break
@@ -80,17 +98,30 @@ def rollout_batch(envs, k, weights, tags, rng) -> list[Rollout]:
         # subset is stepped. Finished envs get a filler action and their results are ignored.
         acts = np.zeros(k, dtype=np.int32)
         for i in np.flatnonzero(active):
-            j = i
             n = int(info["num_options"][i])
             kinds = info["option_kinds_"][i][:n]
-            if int(info["to_play"][i]) == 1:  # passive opponent: decline when possible
-                passes = np.flatnonzero(kinds == KIND_PASS)
-                acts[j] = passes[0] if len(passes) else 0
-                continue
-            hashes = info["option_hash_"][i][:n].tolist()
-            priors = np.array([PRIOR[int(x)] for x in kinds])
-            acts[j], _ = sample(hashes, priors, weights, rng)
-            out[i].trace.append((hashes, priors, int(acts[j])))
+            t = len(out[i].actions)
+            if t < len(prefix):
+                acts[i] = prefix[t]
+            elif int(info["to_play"][i]) == 1:
+                if plan_pos[i] < len(p2_plan):
+                    acts[i] = p2_plan[plan_pos[i]]
+                    plan_pos[i] += 1
+                else:  # passive opponent: decline when possible, and log the window if it could act
+                    passes = np.flatnonzero(kinds == KIND_PASS)
+                    acts[i] = passes[0] if len(passes) else 0
+                    acting = [(o, int(info["option_card_"][i][o]), int(kinds[o]))
+                              for o in range(n) if kinds[o] != KIND_PASS]
+                    if acting and len(passes):
+                        out[i].windows.append(Window(t, int(info["msg"][i]), acting, int(last_p1_card[i])))
+            else:
+                hashes = info["option_hash_"][i][:n].tolist()
+                priors = np.array([PRIOR[int(x)] for x in kinds])
+                acts[i], _ = sample(hashes, priors, weights, rng)
+                out[i].trace.append((hashes, priors, int(acts[i])))
+            if int(info["to_play"][i]) == 0 and info["option_card_"][i][acts[i]]:
+                last_p1_card[i] = int(info["option_card_"][i][acts[i]])
+            out[i].actions.append(int(acts[i]))
         _, _, term, trunc, step = envs.step(acts)
         for j, i in enumerate(step["env_id"]):
             if not active[i]:
@@ -117,14 +148,16 @@ def adapt(weights, best: Rollout, alpha: float) -> None:
         weights[hashes[chosen]] += alpha
 
 
-def search_opening(envs, k, opening, generations, alpha, tags, rng) -> tuple[Rollout, float]:
-    """Best turn-1 line for one opening; also returns the first (untrained) batch's best score."""
+def search_opening(envs, k, opening, generations, alpha, tags, rng, prefix=(), p2_plan=(),
+                   rng_salt=0) -> tuple[Rollout, float]:
+    """Best turn-1 line for one opening (optionally continuing after a forced prefix and P2 plan);
+    also returns the first (untrained) batch's best score."""
     set_opening(opening)
-    rng = np.random.default_rng(opening)  # per-opening stream: any hand reproduces on its own
+    rng = np.random.default_rng([opening, rng_salt])  # per-opening stream: any hand reproduces alone
     weights = defaultdict(float)
     best, first = Rollout(), None
     for _ in range(generations):
-        batch = rollout_batch(envs, k, weights, tags, rng)
+        batch = rollout_batch(envs, k, weights, tags, rng, prefix, p2_plan)
         top = max(batch, key=lambda r: r.score)
         first = top.score if first is None else first
         if top.score > best.score:
@@ -133,12 +166,12 @@ def search_opening(envs, k, opening, generations, alpha, tags, rng) -> tuple[Rol
     return best, first
 
 
-def make_pool(deck: str, k: int, base_seed: int):
-    # One thread per env: with fewer threads than envs, envpool's sync batching occasionally lost a
-    # result and Recv waited forever (seen at ~16 openings with 32 envs on 8 threads).
+def make_pool(deck: str, k: int, base_seed: int, opponent: str | None = None):
+    """K lockstep envs. `opponent` is a stacked P2 deck (e.g. '_p2__ash'), dealt in file order."""
     return ygoenv.make(task_id="EDOPro-v0", env_type="gymnasium", num_envs=k, num_threads=k,
-                       seed=0, deck1=deck, deck2=deck, player=-1, max_options=MAX_OPTIONS,
-                       n_history_actions=16, play_mode="self", lite=True, duel_seed=base_seed)
+                       seed=0, deck1=deck, deck2=opponent or deck, player=-1, max_options=MAX_OPTIONS,
+                       n_history_actions=16, play_mode="self", lite=True, duel_seed=base_seed,
+                       shuffle2=opponent is None)
 
 
 def load(deck=None):

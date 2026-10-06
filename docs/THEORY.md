@@ -89,6 +89,34 @@ without retraining.
 - **Play time:** network everywhere, plus search at high-stakes interruption windows (ReBeL-style).
 - **Stack:** PyTorch on the RTX 5080. ygo-agent's JAX 0.4.28 predates Blackwell.
 
+### 5.1 Rewards and objectives
+
+- **Game reward:** win +1, loss −1, in-game draw (both players at 0 LP together) 0. No bonus for fast
+  wins: Swiss scores a slow win the same as a fast one. ygo-agent's turn-scaled reward is dropped.
+- **No clock in training.** Pilot games are untimed, so there is no time-draw to aim for and nothing to
+  gain by padding turns with legal but pointless actions. The clock exists only at the match layer (§6).
+- **The learned value replaces hand-made per-turn goals.** The value head predicts P(win), P(loss) and
+  P(draw) from any state, which captures what a good turn is worth (interruptions, LP, card advantage).
+  Eventually S (§3) becomes "P2's predicted win chance against this board".
+- **Shaping, early only:** potential-based shaping with Φ = fitted S, adding Φ(s′) − Φ(s) per step
+  (Ng, Harada & Russell 1999). This leaves the optimal policy unchanged. Fade it out as the value head matures.
+- **Auxiliary heads, predicted but not rewarded:** interruptions at end of turn, damage next turn, cards in
+  hand, whether the opponent's combo is stopped. They improve learning and serve as diagnostics.
+- **Fit S from outcomes:** once full games are simulated, regress the turn-1 player's result on end-board
+  features to get S's weights, per matchup if needed, in place of the hand-picked 1.0/0.75/0.1.
+
+### 5.2 Clean wins
+
+Win quality matters only through match and event effects, which are modeled where they occur:
+- **Time:** slow games risk time-draws (§6).
+- **Reliability:** P(win) over many games, and max-min lines (§2).
+- **Information revealed:** this affects the opponent's siding (§6, Bo3).
+- **Event situation:** utility comes from match points, intentional draws and top cut.
+
+LP margin doesn't affect tiebreakers, but it decides unfinished games at time (§6).
+Reported per deck but not rewarded: turns to win, wins through 1/2/3 interruptions, LP margin,
+time-draw rate, and cards revealed.
+
 **Pilot quality, measured per deck** so a deck isn't judged by a bad pilot:
 - Turn-1 gap: the pilot's board vs the search's board from the same hand.
 - Chokepoint agreement: the pilot's interruption timing vs the solver's.
@@ -99,8 +127,17 @@ without retraining.
 
 - **Bo3** (`match.py`): from per-game rates (pre/post side × first/second), with a coin flip for game 1 and
   the loser choosing turn order. Closed form, tested against simulation.
+- **Clock (to implement; details to verify against Konami's current TCG policy):** timed rounds
+  (about 40 min). Game time is simulated from decisions, turns and chains. At time, the current turn
+  plus a few extra turns are played; then the LP leader wins an unfinished game, and equal LP is a draw.
+  The match goes to whoever won more games; equal games make a match draw (1 point each in Swiss).
+  Game outcomes therefore carry duration and LP at time, and the Bo3 closed form gains a
+  "game unfinished" outcome.
+- **Draw incentives:** a time-draw is worth 1 Swiss point against 3 for a win, so playing for one is
+  rational only when P(win) < ~1/3. The pilot never sees the clock (§5.1), so it can't learn to stall.
 - **Event** (`tournament.py`): Swiss by score groups (no rematches, byes, OMW tiebreak) then a
   single-elim top cut, players drawn from field shares. Reports conversion = top-cut share / field share.
+  To add: intentional draws in the final Swiss rounds, when both players make the cut with a draw.
 
 ## 7. Meta and deck optimization
 
@@ -131,3 +168,5 @@ B full single game (search pilot, then neural) → C Bo3 with siding → D event
 - Fontaine et al. 2019, *Mapping Hearthstone Deck Spaces through MAP-Elites* (GECCO).
 - Anthony et al. 2017, *Thinking Fast and Slow with Deep Learning and Tree Search* (expert iteration).
 - sbl1996/ygo-agent (GitHub): ygoenv + RL agents for YGOPro.
+- Ng, Harada & Russell 1999, *Policy Invariance Under Reward Transformations* (potential-based shaping, ICML).
+- Konami, *Yu-Gi-Oh! TCG Tournament Policy*: end-of-match procedure, round time, tiebreakers (current version).

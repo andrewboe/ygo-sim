@@ -222,7 +222,10 @@ PATCHES = [
     ("edopro/edopro.h",
      "                    \"max_multi_select\"_.Bind(5), \"record\"_.Bind(false));",
      "                    \"max_multi_select\"_.Bind(5), \"record\"_.Bind(false),\n"
-     "                    \"lite\"_.Bind(false), \"duel_seed\"_.Bind(int64_t(-1)));"),
+     "                    \"lite\"_.Bind(false), \"duel_seed\"_.Bind(int64_t(-1)),\n"
+     "                    \"shuffle2\"_.Bind(true));"),
+    ("edopro/edopro.h", "      load_deck(i);\n",
+     "      load_deck(i, i != 1 || shuffle2_);  // ygosim: stacked opponent deck for controlled hands\n"),
     ("edopro/edopro.h",
      "        \"info:win_reason\"_.Bind(Spec<int>({}, {-1, 1})));",
      "        \"info:win_reason\"_.Bind(Spec<int>({}, {-1, 1})),\n"
@@ -232,11 +235,13 @@ PATCHES = [
      "        \"info:field_codes_\"_.Bind(Spec<int>({2, 13})),\n"
      "        \"info:hand_codes_\"_.Bind(Spec<int>({2, 15})),\n"
      "        \"info:option_kinds_\"_.Bind(Spec<uint8_t>({conf[\"max_options\"_]})),\n"
-     "        \"info:option_hash_\"_.Bind(Spec<int>({conf[\"max_options\"_]})));"),
+     "        \"info:option_hash_\"_.Bind(Spec<int>({conf[\"max_options\"_]})),\n"
+     "        \"info:option_card_\"_.Bind(Spec<int>({conf[\"max_options\"_]})));"),
     ("edopro/edopro.h",
      "        verbose_(spec.config[\"verbose\"_]), record_(spec.config[\"record\"_]),",
      "        verbose_(spec.config[\"verbose\"_]), record_(spec.config[\"record\"_]),\n"
-     "        lite_(spec.config[\"lite\"_]), duel_seed_(spec.config[\"duel_seed\"_]),"),
+     "        lite_(spec.config[\"lite\"_]), duel_seed_(spec.config[\"duel_seed\"_]),\n"
+     "        shuffle2_(spec.config[\"shuffle2\"_]),"),
     ("edopro/edopro.h",
      "  void Reset() override {\n",
      "  void Reset() override {\n"

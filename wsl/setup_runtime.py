@@ -3,7 +3,8 @@
   edopro_script/  every Ignis script in one flat dir (official wins over pre-release)
   cards.cdb       BabelCDB cards.cdb + release/pre-release DBs (Advanced format only)
   code_list.txt   card codes the env may see
-  decks/          field decklists, flattened to <deck>__<label>.ydk, plus _tokens.ydk
+  decks/          field decklists, flattened to <deck>__<label>.ydk; _all.ydk preloads every card;
+                  _p2__<set>.ydk are stacked opponent hand-trap decks (THEORY §2)
 """
 import glob
 import os
@@ -49,6 +50,38 @@ def merge_db():
     return all_ids, [os.path.basename(p) for p in extra]
 
 
+# Opponent test decks for interruption studies (THEORY §2): inert vanilla filler with the hand traps
+# stacked on top, used with shuffle2=False so the opening hand is exactly these cards plus filler.
+FILLER = "Mystical Elf"
+HAND_TRAP_SETS = {
+    "ash": ["Ash Blossom & Joyous Spring"],
+    "imperm": ["Infinite Impermanence"],
+    "veiler": ["Effect Veiler"],
+    "nibiru": ["Nibiru, the Primal Being"],
+    "droll": ["Droll & Lock Bird"],
+    "ghost-belle": ["Ghost Belle & Haunted Mansion"],
+    "ash-imperm": ["Ash Blossom & Joyous Spring", "Infinite Impermanence"],
+}
+
+
+def write_p2_decks(out: str) -> int:
+    con = sqlite3.connect(f"{RUN}/cards.cdb")
+
+    def code(name):
+        row = con.execute("select id from texts where name = ? order by id limit 1", (name,)).fetchone()
+        if row is None:
+            raise KeyError(f"card not found: {name}")
+        return row[0]
+
+    filler = code(FILLER)
+    for key, names in HAND_TRAP_SETS.items():
+        traps = [code(n) for n in names]
+        main = [filler] * (40 - len(traps)) + traps  # last lines are the top of the deck
+        with open(f"{out}/_p2__{key}.ydk", "w", newline="\n") as f:
+            f.write("#main\n" + "\n".join(map(str, main)) + "\n#extra\n!side\n")
+    return len(HAND_TRAP_SETS)
+
+
 def copy_decks(all_ids):
     out = f"{RUN}/decks"
     shutil.rmtree(out, ignore_errors=True)
@@ -67,7 +100,8 @@ def copy_decks(all_ids):
         f.write("#main\n" + "\n".join(map(str, all_ids)) + "\n#extra\n!side\n")
     with open(f"{RUN}/code_list.txt", "w") as f:
         f.write("\n".join(map(str, sorted(codes))) + "\n")
-    return len(glob.glob(f"{out}/*.ydk")) - 1, len(codes)
+    n_p2 = write_p2_decks(out)
+    return len(glob.glob(f"{out}/[!_]*.ydk")), len(codes), n_p2
 
 
 if __name__ == "__main__":
@@ -75,5 +109,5 @@ if __name__ == "__main__":
     print("scripts:", link_scripts())
     all_ids, extra = merge_db()
     print(f"db: {len(all_ids)} cards (merged {extra})")
-    decks, codes = copy_decks(all_ids)
-    print(f"decks: {decks}, code list: {codes}")
+    decks, codes, n_p2 = copy_decks(all_ids)
+    print(f"decks: {decks} (+{n_p2} opponent hand-trap test decks), code list: {codes}")
