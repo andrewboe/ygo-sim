@@ -3,4 +3,4 @@
 source ~/ygo/.venv/bin/activate
 cd ~/ygo/run
 timeout ${TIMEOUT:-1800} python3 -u /mnt/c/Users/andre/Desktop/ygo-sim/wsl/"$@" 2>&1 \
-  | grep -vE '^(Gym has|Please upgrade|Users of this|See the migration)|Unable to open script file'
+  | grep --line-buffered -vE '^(Gym has|Please upgrade|Users of this|See the migration)|Unable to open script file'

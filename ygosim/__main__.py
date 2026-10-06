@@ -123,6 +123,19 @@ def cmd_tournament(args):
               f"{row['top_cut_rate']:8.1%} {row['win_rate']:6.1%}  {row['deck']}")
 
 
+def cmd_fit_eval(args):
+    from .evalfit import WEIGHTS, fit
+
+    out = fit(args.l2)
+    r = out["report"]
+    print(f"{r['positions']} positions from {r['games']} games")
+    print(f"held-out log loss {r['test_log_loss']:.3f} (base rate {r['test_log_loss_base_rate']:.3f}), "
+          f"accuracy {r['test_accuracy']:.0%}")
+    for k, v in sorted(out["weights"].items(), key=lambda kv: -abs(kv[1])):
+        print(f"  {v:+.3f}  {k}")
+    print(f"wrote {WEIGHTS}")
+
+
 def main():
     parser = argparse.ArgumentParser(prog="ygosim")
     sub = parser.add_subparsers(required=True)
@@ -170,6 +183,10 @@ def main():
     tour.add_argument("--events", type=int, default=1000)
     tour.add_argument("--seed", type=int, default=0)
     tour.set_defaults(func=cmd_tournament)
+
+    fe = sub.add_parser("fit-eval", help="fit the game position evaluation from logged game outcomes")
+    fe.add_argument("--l2", type=float, default=1.0)
+    fe.set_defaults(func=cmd_fit_eval)
 
     args = parser.parse_args()
     args.func(args)
