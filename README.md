@@ -1,6 +1,7 @@
 # ygosim
 
 Simulation-driven Yu-Gi-Oh! deck optimization, seeded from the current TCG meta.
+The theory and design live in [docs/THEORY.md](docs/THEORY.md).
 
 ## Plan
 
