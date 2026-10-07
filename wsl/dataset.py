@@ -75,18 +75,18 @@ def examples_from_search(path: str, max_lines: int | None) -> list[dict]:
     out = []
     for r in rows:
         env = make_env(r["deck"], f"_p2__{r['opponent']}", r["seed"])
-        # P1's chosen turn-1 line, valued by its board.
-        out += replay(env, r["hand"], r["actions"], {0: r["line"]})
-        # Each interruption: P2's choice and P1's continuation, valued by the board after it.
-        for t in r["trials"]:
-            out += replay(env, r["hand"], t["reply"], {0: t["score"], 1: -t["score"]}, start=t["prefix_len"])
+        group = hash((r["deck"], r["seed"], r["hand"])) & 0x7FFFFFFF  # one opening; split train/val by it
+        ex = replay(env, r["hand"], r["actions"], {0: r["line"]})  # P1's chosen line, valued by its board
+        for t in r["trials"]:  # each interruption: P2's choice and P1's continuation
+            ex += replay(env, r["hand"], t["reply"], {0: t["score"], 1: -t["score"]}, start=t["prefix_len"])
+        out += [{**e, "group": group} for e in ex]
     return out
 
 
 def save(examples: list[dict], name: str) -> str:
     os.makedirs(TRAIN, exist_ok=True)
     arrays = {k: np.stack([e[k] for e in examples]) for k in OBS_KEYS}
-    for k in ("num_options", "action", "player", "value"):
+    for k in ("num_options", "action", "player", "value", "group"):
         arrays[k] = np.array([e[k] for e in examples])
     path = f"{TRAIN}/{name}.npz"
     np.savez_compressed(path, **arrays)

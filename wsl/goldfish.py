@@ -324,12 +324,23 @@ def main():
     rng = np.random.default_rng(0)
     probe = None if args.no_probe else make_probe(names)
     envs = make_pool(args.deck, args.rollouts, args.seed, opponent=None if args.no_probe else "_p2__none")
+    # Every searched line is training data for the pilot (wsl/dataset.py reads this format).
+    import json
+    opponent = None if args.no_probe else "none"
+    os.makedirs("/mnt/c/Users/andre/Desktop/ygo-sim/data/search", exist_ok=True)
+    log = open(f"/mnt/c/Users/andre/Desktop/ygo-sim/data/search/{args.deck}__goldfish.jsonl", "a") \
+        if opponent else None
     t0, scores, firsts = time.time(), [], []
     for h in range(args.first, args.first + args.hands):
         best, first = search_opening(envs, args.rollouts, h, args.generations, args.alpha, tags, rng,
                                      probe=probe)
         scores.append(best.score)
         firsts.append(first)
+        if log:
+            log.write(json.dumps({"deck": args.deck, "opponent": opponent, "seed": args.seed, "hand": h,
+                                  "actions": best.actions[:best.turn1_len], "line": best.score,
+                                  "trials": []}) + "\n")
+            log.flush()
         board = [("(set) " if c < 0 else "") + names.get(abs(c), str(c)) for c in best.board if c]
         held = [names.get(c, str(c)) for c in best.hand if c and tags.get(c, {}).get("hand")]
         live = f" | live: {[names.get(c, str(c)) for c in best.live]}" if probe else ""

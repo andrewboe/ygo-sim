@@ -24,7 +24,11 @@ KEYS = ("cards_", "global_", "actions_", "num_options", "action", "value")
 
 def load_all():
     parts = [np.load(p) for p in sorted(glob.glob(f"{TRAIN}/*.npz"))]
-    return {k: np.concatenate([p[k] for p in parts]) for k in KEYS}
+    data = {k: np.concatenate([p[k] for p in parts]) for k in KEYS}
+    # Opening id per example (older shards without one: each file is its own group).
+    data["group"] = np.concatenate([p["group"] if "group" in p else np.full(len(p["action"]), i)
+                                    for i, p in enumerate(parts)])
+    return data
 
 
 def batches(data, idx, bs, device, shuffle):
@@ -50,8 +54,13 @@ def main():
 
     data = load_all()
     n = len(data["action"])
-    perm = np.random.permutation(n)
-    val, train = perm[: n // 10], perm[n // 10:]
+    # Hold out whole openings: decisions from one opening share line prefixes, so a per-example split
+    # would leak near-duplicate positions into validation.
+    groups = np.unique(data["group"])
+    val_groups = set(np.random.choice(groups, size=max(1, len(groups) // 10), replace=False))
+    is_val = np.array([g in val_groups for g in data["group"]])
+    val, train = np.flatnonzero(is_val), np.flatnonzero(~is_val)
+    print(f"{len(groups)} openings, {len(val_groups)} held out")
     baseline = float(np.mean(1.0 / data["num_options"][val]))
     print(f"{n} examples ({len(train)} train / {len(val)} val); uniform-random accuracy {baseline:.1%}")
 
