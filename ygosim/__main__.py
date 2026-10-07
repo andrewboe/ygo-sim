@@ -143,6 +143,18 @@ def cmd_fit_eval(args):
     print(f"wrote {WEIGHTS}")
 
 
+def cmd_variants(args):
+    from .variants import discover
+
+    report = discover(args.days, args.min_lists)
+    for deck, r in sorted(report.items(), key=lambda kv: -kv[1]["lists"]):
+        print(f"\n{deck}  ({r['lists']} lists; {r['one_offs']} one-off lists not shown)")
+        for v in r["variants"]:
+            sig = ", ".join(v["signature"][:4]) or "(no distinguishing cards: the core build)"
+            print(f"  {v['share_of_deck']:5.0%}  {v['lists']:3} lists  {v['variant'][:36]:36}  {sig}")
+    print(f"\nwrote {DATA_DIR / 'variants' / 'variants.json'} and one .ydk per variant")
+
+
 def cmd_matrix(args):
     from .matrix import MATRIX, build
 
@@ -220,6 +232,11 @@ def main():
     tour.add_argument("--events", type=int, default=1000)
     tour.add_argument("--seed", type=int, default=0)
     tour.set_defaults(func=cmd_tournament)
+
+    va = sub.add_parser("variants", help="stage 0: discover the variants inside each field deck")
+    va.add_argument("--days", type=int, default=60)
+    va.add_argument("--min-lists", type=int, default=2, help="smaller groups are reported as one-offs")
+    va.set_defaults(func=cmd_variants)
 
     mx = sub.add_parser("matrix", help="Bo3 matchup matrix from simulated games (data/games/results.jsonl)")
     mx.add_argument("decks", nargs="+", help="runtime deck names, e.g. elfnote__tcg")
