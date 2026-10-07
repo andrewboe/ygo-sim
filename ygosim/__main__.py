@@ -101,9 +101,16 @@ def cmd_tournament(args):
 
     from .tournament import EventFormat, check_matrix, simulate
 
+    from .meta import slugify
+
     field = json.loads((DATA_DIR / "field" / "field.json").read_text(encoding="utf-8"))
     m = json.loads(open(args.matrix, encoding="utf-8").read())
-    index = {d: i for i, d in enumerate(m["decks"])}
+    # Matrix decks may be runtime names ("elfnote__tcg"); map them to field entries by slug.
+    index = {}
+    for i, d in enumerate(m["decks"]):
+        slug = d.split("__")[0]
+        name = next((e["deck"] for e in field["entries"] if slugify(e["deck"]) == slug), d)
+        index.setdefault(name, i)
     names = [e["deck"] for e in field["entries"] if e["deck"] in index]
     missing = [e["deck"] for e in field["entries"] if e["deck"] not in index]
     if missing:
@@ -134,6 +141,36 @@ def cmd_fit_eval(args):
     for k, v in sorted(out["weights"].items(), key=lambda kv: -abs(kv[1])):
         print(f"  {v:+.3f}  {k}")
     print(f"wrote {WEIGHTS}")
+
+
+def cmd_matrix(args):
+    from .matrix import MATRIX, build
+
+    out = build(args.decks, args.eval)
+    decks = out["decks"]
+    width = max(len(d) for d in decks)
+    print(f"Bo3 match win rate (row vs column), from {RESULTS_NOTE}:\n")
+    print(" " * width + "  " + "  ".join(f"{i:>5}" for i in range(len(decks))))
+    for i, (d, row) in enumerate(zip(decks, out["matrix"])):
+        print(f"{d:>{width}}  " + "  ".join(f"{v:5.0%}" for v in row) + f"   [{i}]")
+    print(f"\nwrote {MATRIX}  (use: ygosim tournament --matrix {MATRIX})")
+
+
+RESULTS_NOTE = "data/games/results.jsonl"
+
+
+def cmd_hand_traps(args):
+    from .handtraps import field_hand_trap_odds
+
+    import json
+
+    odds = field_hand_trap_odds(args.cards, args.hand)
+    print(f"P(opponent opens at least one), {args.hand}-card hand, weighted over the current field:")
+    for name, p in sorted(odds.items(), key=lambda kv: -kv[1]):
+        print(f"  {p:5.1%}  {name}")
+    out = DATA_DIR / "field" / "hand_trap_odds.json"
+    out.write_text(json.dumps({"hand": args.hand, "odds": odds}, indent=1), encoding="utf-8")
+    print(f"wrote {out} (chokepoint.py --p-trap auto reads it)")
 
 
 def main():
@@ -183,6 +220,19 @@ def main():
     tour.add_argument("--events", type=int, default=1000)
     tour.add_argument("--seed", type=int, default=0)
     tour.set_defaults(func=cmd_tournament)
+
+    mx = sub.add_parser("matrix", help="Bo3 matchup matrix from simulated games (data/games/results.jsonl)")
+    mx.add_argument("decks", nargs="+", help="runtime deck names, e.g. elfnote__tcg")
+    mx.add_argument("--eval", choices=["fitted", "default"], help="only games played with this evaluation")
+    mx.set_defaults(func=cmd_matrix)
+
+    ht = sub.add_parser("hand-traps", help="how likely the field's opponent opens each hand trap")
+    ht.add_argument("cards", nargs="*", default=["Ash Blossom & Joyous Spring", "Infinite Impermanence",
+                                                 "Effect Veiler", "Nibiru, the Primal Being",
+                                                 "Droll & Lock Bird", "Ghost Belle & Haunted Mansion",
+                                                 "Mulcharmy Fuwalos", "Mulcharmy Purulia"])
+    ht.add_argument("--hand", type=int, default=6, help="6 = facing the second player's first turn")
+    ht.set_defaults(func=cmd_hand_traps)
 
     fe = sub.add_parser("fit-eval", help="fit the game position evaluation from logged game outcomes")
     fe.add_argument("--l2", type=float, default=1.0)

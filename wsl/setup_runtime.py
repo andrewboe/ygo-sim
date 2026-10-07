@@ -64,6 +64,8 @@ HAND_TRAP_SETS = {
     "droll": ["Droll & Lock Bird"],
     "ghost-belle": ["Ghost Belle & Haunted Mansion"],
     "ash-imperm": ["Ash Blossom & Joyous Spring", "Infinite Impermanence"],
+    "fuwalos": ["Mulcharmy Fuwalos"],
+    "purulia": ["Mulcharmy Purulia"],
 }
 
 

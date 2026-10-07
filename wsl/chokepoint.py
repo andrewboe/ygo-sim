@@ -157,6 +157,22 @@ def map_opening(envs, k, opening, gens, cont_gens, alpha, tags, ids, probe=None)
     return base, interruption_trials(envs, k, opening, base, cont_gens, alpha, tags, ids, probe)
 
 
+ODDS_FILE = "/mnt/c/Users/andre/Desktop/ygo-sim/data/field/hand_trap_odds.json"
+
+
+def resolve_p_trap(value: str, opponent: str) -> float:
+    """A number, or 'auto': P(opponent opens >= 1 of the set's traps) from field odds, assuming
+    independence across different traps."""
+    if value != "auto":
+        return float(value)
+    from setup_runtime import HAND_TRAP_SETS
+    odds = json.load(open(ODDS_FILE))["odds"]
+    p_none = 1.0
+    for name in HAND_TRAP_SETS[opponent]:
+        p_none *= 1 - odds.get(name, 0.5)
+    return 1 - p_none
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("deck")
@@ -173,14 +189,16 @@ def main():
                     help="opponent holds two hand traps (e.g. --opponent ash-imperm): nest the second")
     ap.add_argument("--robust", type=int, default=0, metavar="ROUNDS",
                     help="robust line (THEORY §2.3): candidates from ROUNDS of iterated best response")
-    ap.add_argument("--p-trap", type=float, default=0.6,
+    ap.add_argument("--p-trap", default="auto",
                     help="chance P2 holds the trap; picks the line maximizing p*worst + (1-p)*goldfish "
-                         "(1.0 = pure max-min)")
+                         "(1.0 = pure max-min; 'auto' = field odds from `ygosim hand-traps`)")
     args = ap.parse_args()
 
     names = load(args.deck)
     ids = card_names(names)
     tags = all_tags()
+    args.p_trap = resolve_p_trap(args.p_trap, args.opponent)
+    print(f"P(opponent holds the trap) = {args.p_trap:.2f}", flush=True)
     probe = None if args.no_probe else make_probe(names)
     envs = make_pool(args.deck, args.rollouts, args.seed, opponent=f"_p2__{args.opponent}")
     os.makedirs(SEARCH_LOG, exist_ok=True)

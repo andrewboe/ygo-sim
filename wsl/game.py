@@ -252,6 +252,8 @@ def main():
     import json
     os.makedirs(os.path.dirname(WEIGHTS_FILE), exist_ok=True)
     pos_log = open(os.path.join(os.path.dirname(WEIGHTS_FILE), "positions.jsonl"), "a")
+    result_log = open(os.path.join(os.path.dirname(WEIGHTS_FILE), "results.jsonl"), "a")
+    weights_tag = json.load(open(WEIGHTS_FILE))["report"] if os.path.exists(WEIGHTS_FILE) else None
     print(f"eval weights: {'fitted' if os.path.exists(WEIGHTS_FILE) else 'hand-picked defaults'}", flush=True)
     results, t0 = [], time.time()
     for g in range(args.first_game, args.first_game + args.games):
@@ -263,6 +265,11 @@ def main():
             pos_log.write(json.dumps({"decks": [args.first, args.second], "game": g, "player": p,
                                       "features": f, "won": won}) + "\n")
         pos_log.flush()
+        result_log.write(json.dumps({"first": args.first, "second": args.second, "game": g, "seed": args.seed,
+                                     "winner": r["winner"], "turns": r["turns"], "by": r["by"],
+                                     "eval": "fitted" if weights_tag else "default",
+                                     "eval_positions": weights_tag["positions"] if weights_tag else 0}) + "\n")
+        result_log.flush()
         who = {0: f"first ({args.first})", 1: f"second ({args.second})", -1: "draw"}[r["winner"]]
         print(f"game {g}: {who} wins, turn {r['turns']} by {r['by']} "
               f"{r.get('lp', '')} [{time.time() - t0:.0f}s]", flush=True)

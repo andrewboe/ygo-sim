@@ -23,14 +23,14 @@ public static class Awake2 {
 [Awake2]::SetThreadExecutionState([uint32]2147483648 -bor [uint32]1) | Out-Null
 try {
     for ($r = 0; $r -lt $Rounds; $r++) {
-        "== round $r: $Games games ($First first vs $Second)" | Tee-Object -Append $log
+        "== round ${r}: $Games games ($First first vs $Second)" | Tee-Object -Variable line | ForEach-Object { $_; Add-Content -Path $log -Value $_ -Encoding utf8 }
         $cmd = "TIMEOUT=14400 bash /mnt/c/Users/andre/Desktop/ygo-sim/wsl/run_py.sh game.py $First $Second " +
                "--games $Games --max-turns $MaxTurns --first-game $($r * $Games)"
         wsl -- bash -c $cmd 2>&1 | Select-String -Pattern "eval weights|first wins|games in" | ForEach-Object { $_.Line } |
-            Tee-Object -Append $log
-        & (Join-Path $root ".venv\Scripts\ygosim.exe") fit-eval 2>&1 | Tee-Object -Append $log
+            Tee-Object -Variable line | ForEach-Object { $_; Add-Content -Path $log -Value $_ -Encoding utf8 }
+        & (Join-Path $root ".venv\Scripts\ygosim.exe") fit-eval 2>&1 | Tee-Object -Variable line | ForEach-Object { $_; Add-Content -Path $log -Value $_ -Encoding utf8 }
     }
-    "== done" | Tee-Object -Append $log
+    "== done" | Tee-Object -Variable line | ForEach-Object { $_; Add-Content -Path $log -Value $_ -Encoding utf8 }
 } finally {
     [Awake2]::SetThreadExecutionState([uint32]2147483648) | Out-Null
 }
