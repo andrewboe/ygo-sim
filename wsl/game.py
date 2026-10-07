@@ -221,10 +221,12 @@ def play_game(envs, k, game_seed, max_turns, gens, alpha, tags, id_to_code, name
         if best.ended:
             if log:
                 log(f"    turn {turn}: player {tp} ends the game (winner {best.winner})")
-            return {"winner": best.winner, "turns": turn, "by": "game", "positions": positions}
+            return {"winner": best.winner, "turns": turn, "by": "game", "positions": positions,
+                    "history": history}
     # Turn cap: LP leader wins, equal LP draws (stand-in for the end-of-match procedure).
     winner = 0 if lp[0] > lp[1] else 1 if lp[1] > lp[0] else -1
-    return {"winner": winner, "turns": max_turns, "by": "turn cap", "lp": lp, "positions": positions}
+    return {"winner": winner, "turns": max_turns, "by": "turn cap", "lp": lp, "positions": positions,
+            "history": history}
 
 
 def main():
@@ -268,7 +270,8 @@ def main():
         result_log.write(json.dumps({"first": args.first, "second": args.second, "game": g, "seed": args.seed,
                                      "winner": r["winner"], "turns": r["turns"], "by": r["by"],
                                      "eval": "fitted" if weights_tag else "default",
-                                     "eval_positions": weights_tag["positions"] if weights_tag else 0}) + "\n")
+                                     "eval_positions": weights_tag["positions"] if weights_tag else 0,
+                                     "history": r.get("history", [])}) + "\n")  # exact replay -> dataset.py
         result_log.flush()
         who = {0: f"first ({args.first})", 1: f"second ({args.second})", -1: "draw"}[r["winner"]]
         print(f"game {g}: {who} wins, turn {r['turns']} by {r['by']} "
