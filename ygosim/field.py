@@ -14,8 +14,11 @@ from datetime import date
 
 from .api import DATA_DIR
 from .deck import Deck
-from .meta import Archetype, slugify
+from .meta import Archetype, card_set, jaccard, slugify
 from .project import Projection, closest_tcg, generic_cards
+
+FOLD_MIN = 0.40  # staple-free overlap for folding a sub-cutoff cluster into a field deck (0.30 mis-folded
+                 # e.g. Sacred Beast into Mitsurugi; matches score >=0.5, unrelated decks <=0.35)
 
 
 @dataclass
@@ -43,11 +46,28 @@ def build_field(tcg: list[Archetype], projections: list[Projection], community: 
     today = today or date.today()
     total = sum(a.weight(today) for a in tcg) or 1
     share = {a.name: a.weight(today) / total for a in tcg}
-    entries = {a.name: FieldEntry(a.name, share[a.name], variants=a.variants,
+    entries = {a.name: FieldEntry(a.name, share[a.name], variants=list(a.variants),
                                   lists={"tcg": a.representative})
                for a in tcg if share[a.name] >= min_share}
     notes = []
     generic = generic_cards(tcg)
+
+    # Fold small clusters into the field deck they're a variant of (e.g. "Mitsurugi Chaos Ritual"
+    # into the ROLAD pile), so their share counts toward it instead of disappearing into 'other'.
+    majors = [a for a in tcg if a.name in entries]
+    for a in tcg:
+        if a.name in entries:
+            continue
+        cards = [card_set(d) - generic for d in a.lists]
+        best, score = None, FOLD_MIN
+        for m in majors:
+            s = max(jaccard(c, card_set(d) - generic) for c in cards for d in m.lists)
+            if s >= score:
+                best, score = m, s
+        if best is not None:
+            entries[best.name].tcg_share += share[a.name]
+            entries[best.name].variants.append(a.name)
+            notes.append(f"{a.name}: {share[a.name]:.1%} TCG share folded into {best.name} (overlap {score:.2f})")
 
     def place(label: str, deck: Deck, origin: str, ocg_share: float | None = None):
         match = closest_tcg(deck, tcg, generic)
@@ -55,6 +75,8 @@ def build_field(tcg: list[Archetype], projections: list[Projection], community: 
             notes.append(f"{label}: no TCG counterpart and only {ocg_share:.1%} of the OCG, "
                          f"below the {min_ocg_share:.0%} bar for new decks ({origin})")
         elif match is None:
+            if label in entries:  # never overwrite a TCG deck that shares the label
+                label = f"{label} (OCG)"
             entries[label] = FieldEntry(label, 0.0, source="new", lists={origin: deck})
             notes.append(f"{label}: new deck ({origin}), prior share {new_share:.0%}")
         elif match.name in entries:
