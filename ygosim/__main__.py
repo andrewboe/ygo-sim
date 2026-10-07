@@ -155,6 +155,37 @@ def cmd_variants(args):
     print(f"\nwrote {DATA_DIR / 'variants' / 'variants.json'} and one .ydk per variant")
 
 
+def cmd_packages(args):
+    from .breakers import CANDIDATES, build_candidates
+
+    rows = build_candidates(args.packages)
+    made = [r for r in rows if "skipped" not in r]
+    print(f"{len(made)} candidate lists ({sum(1 for r in made if r['package'])} with breaker packages); "
+          f"{len(rows) - len(made)} skipped\n")
+    for r in rows:
+        if r.get("package") and "skipped" not in r:
+            print(f"  {r['candidate'][:52]:52} +{', '.join(r['added'])}  -{', '.join(r['cut'])[:70]}")
+    for r in rows:
+        if "skipped" in r:
+            print(f"  skip {r['candidate'][:47]:47} {r['skipped'][:80]}")
+    print(f"\nwrote {CANDIDATES}")
+
+
+def cmd_screen(args):
+    from itertools import groupby
+
+    from .screen import summarize
+
+    rows = summarize()
+    fmt = lambda v, p: "  -  " if v is None else f"{v:{p}}"
+    print("going first = goldfish board (interruptions); going second = break-the-board score vs top decks\n")
+    for deck, group in groupby(sorted(rows, key=lambda r: r["deck"]), key=lambda r: r["deck"]):
+        print(deck)
+        for r in sorted(group, key=lambda r: -(r["second"] or 0) - (r["first"] or 0) / 5):
+            print(f"  first {fmt(r['first'], '5.2f')} ({r['first_n']:3})   second {fmt(r['second'], '5.2f')}   "
+                  f"{r['variant']}")
+
+
 def cmd_matrix(args):
     from .matrix import MATRIX, build
 
@@ -237,6 +268,13 @@ def main():
     va.add_argument("--days", type=int, default=60)
     va.add_argument("--min-lists", type=int, default=2, help="smaller groups are reported as one-offs")
     va.set_defaults(func=cmd_variants)
+
+    pk = sub.add_parser("packages", help="candidate lists: each variant, plus board-breaker packages")
+    pk.add_argument("packages", nargs="*", help="package names from config/breakers.json (default: all)")
+    pk.set_defaults(func=cmd_packages)
+
+    sc = sub.add_parser("screen", help="funnel stage 1 summary: going-first and going-second scores")
+    sc.set_defaults(func=cmd_screen)
 
     mx = sub.add_parser("matrix", help="Bo3 matchup matrix from simulated games (data/games/results.jsonl)")
     mx.add_argument("decks", nargs="+", help="runtime deck names, e.g. elfnote__tcg")

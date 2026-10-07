@@ -93,9 +93,14 @@ def discover(max_days: int = 60, min_lists: int = 2) -> dict:
             slug = slugify(vname) or "core"
             path = out_dir / slugify(deck) / f"{slug}.ydk"
             rep.to_ydk(path)
+            main_rate = Counter()
+            for d in g:
+                main_rate.update(set(d.main))
             variants.append({"variant": vname, "lists": len(g), "share_of_deck": round(weight(g) / total, 3),
                              "labels": dict(Counter(d.name for d in g).most_common(4)),
-                             "signature": [name(c) for c in signature], "ydk": str(path.relative_to(DATA_DIR))})
+                             "signature": [name(c) for c in signature], "ydk": str(path.relative_to(DATA_DIR)),
+                             # main-deck play rate within this variant (flex vs core for package cuts)
+                             "play_rate": {str(c): round(n / len(g), 3) for c, n in main_rate.items()}})
         report[deck] = {"lists": len(pooled), "variants": variants, "one_offs": singles}
     (out_dir / "variants.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
     return report

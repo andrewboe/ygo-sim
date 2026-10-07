@@ -1,0 +1,23 @@
+{
+  "_comment": "Board breakers and packages (THEORY §2, going second). Counts are targets; the generator tops up existing copies and respects TCG limits. 'requires' gates conditional breakers on the deck containing any card whose text mentions the given name.",
+  "cards": {
+    "Forbidden Droplet": {"role": "generic"},
+    "Triple Tactics Talent": {"role": "generic"},
+    "Triple Tactics Thrust": {"role": "generic"},
+    "Forbidden Crown": {"role": "generic"},
+    "Dark Ruler No More": {"role": "generic"},
+    "Super Polymerization": {"role": "generic"},
+    "Book of Eclipse": {"role": "generic"},
+    "Harpie's Feather Duster": {"role": "backrow"},
+    "Lightning Storm": {"role": "backrow"},
+    "Evenly Matched": {"role": "backrow"},
+    "The Fallen & The Virtuous": {"role": "conditional", "requires": "Fallen of Albaz"}
+  },
+  "packages": {
+    "light": {"Triple Tactics Talent": 1, "Forbidden Droplet": 2},
+    "heavy": {"Triple Tactics Talent": 1, "Forbidden Droplet": 2, "Dark Ruler No More": 1,
+              "Forbidden Crown": 1, "Triple Tactics Thrust": 1},
+    "backrow": {"Harpie's Feather Duster": 1, "Lightning Storm": 1, "Evenly Matched": 2},
+    "albaz": {"The Fallen & The Virtuous": 2, "Triple Tactics Talent": 1}
+  }
+}

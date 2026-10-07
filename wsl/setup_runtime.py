@@ -88,16 +88,22 @@ def write_p2_decks(out: str) -> int:
     return len(HAND_TRAP_SETS)
 
 
+CANDIDATES = "/mnt/c/Users/andre/Desktop/ygo-sim/data/candidates"
+
+
 def copy_decks(all_ids):
     out = f"{RUN}/decks"
     shutil.rmtree(out, ignore_errors=True)
     os.makedirs(out)
     codes = set(all_ids)
-    for p in glob.glob(f"{FIELD}/*/*.ydk"):
-        deck, label = os.path.basename(os.path.dirname(p)), os.path.basename(p)[:-4]
+    # Field lists as <deck>__<label>; funnel candidates (ygosim packages) as cand__<name>.
+    sources = [(p, f"{os.path.basename(os.path.dirname(p))}__{os.path.basename(p)[:-4]}")
+               for p in glob.glob(f"{FIELD}/*/*.ydk")]
+    sources += [(p, f"cand__{os.path.basename(p)[:-4]}") for p in glob.glob(f"{CANDIDATES}/*.ydk")]
+    for p, name in sources:
         lines = [l.strip() for l in open(p)]
         # Normalize to LF: ygoenv's parser skips card lines ending in '\r'.
-        with open(f"{out}/{deck}__{label}.ydk", "w", newline="\n") as f:
+        with open(f"{out}/{name}.ydk", "w", newline="\n") as f:
             f.write("\n".join(lines) + "\n")
         codes |= {int(l) for l in lines if l.isdigit()}
     # The env only knows cards it preloaded, and duels create cards that aren't in any deck

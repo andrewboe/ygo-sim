@@ -223,6 +223,11 @@ def play_game(envs, k, game_seed, max_turns, gens, alpha, tags, id_to_code, name
                 log(f"    turn {turn}: player {tp} ends the game (winner {best.winner})")
             return {"winner": best.winner, "turns": turn, "by": "game", "positions": positions,
                     "history": history}
+    # Position after the last searched turn (used by short screens, e.g. 2-turn going-second tests).
+    turn, tp, info = current_state(envs, k, history)
+    lp = tuple(int(x) for x in info["lp_"][0])
+    if last_tp is not None:
+        positions.append((last_tp, features(info, 0, last_tp, tags)))
     # Turn cap: LP leader wins, equal LP draws (stand-in for the end-of-match procedure).
     winner = 0 if lp[0] > lp[1] else 1 if lp[1] > lp[0] else -1
     return {"winner": winner, "turns": max_turns, "by": "turn cap", "lp": lp, "positions": positions,
