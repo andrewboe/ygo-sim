@@ -30,20 +30,28 @@ def first_win_rates(decks: list[str], eval_filter: str | None = None) -> dict:
 
 
 def build(decks: list[str], eval_filter: str | None = None) -> dict:
-    tally = first_win_rates(decks, eval_filter)
+    """Game 1 uses the main lists; games 2-3 use side plans when those games exist: the deck going
+    first plays <name>__s1, the deck going second <name>__s2 (ygosim side-plans). Otherwise post = pre."""
+    names = decks + [f"{d}__{s}" for d in decks for s in ("s1", "s2")]
+    tally = first_win_rates(names, eval_filter)
     rate = lambda a, b: (tally[(a, b)][0] + 1) / (tally[(a, b)][1] + 2)  # P(a wins going first vs b)
+    has = lambda a, b: tally[(a, b)][1] > 0
     n = len(decks)
     match = np.zeros((n, n))
     game = {}
+    sided = 0
     for i, a in enumerate(decks):
         for j, b in enumerate(decks):
             first, second = rate(a, b), 1 - rate(b, a)
-            game[f"{a} vs {b}"] = {"first": first, "second": second,
-                                   "games": tally[(a, b)][1] + tally[(b, a)][1]}
-            match[i, j] = match_win_rate(GameRates(first, second, first, second))
+            post_first = rate(f"{a}__s1", f"{b}__s2") if has(f"{a}__s1", f"{b}__s2") else first
+            post_second = 1 - rate(f"{b}__s1", f"{a}__s2") if has(f"{b}__s1", f"{a}__s2") else second
+            sided += has(f"{a}__s1", f"{b}__s2")
+            game[f"{a} vs {b}"] = {"first": first, "second": second, "post_first": post_first,
+                                   "post_second": post_second, "games": tally[(a, b)][1] + tally[(b, a)][1]}
+            match[i, j] = match_win_rate(GameRates(first, second, post_first, post_second))
     # Mirror and complementarity: average with the transpose so M[a,b] + M[b,a] = 1 exactly.
     match = (match + (1 - match.T)) / 2
     out = {"decks": decks, "matrix": match.round(4).tolist(), "game_rates": game,
-           "note": "post-side = pre-side until side plans exist"}
+           "note": f"post-side games played for {sided} of {n * n} ordered pairs; others reuse pre-side rates"}
     MATRIX.write_text(json.dumps(out, indent=1), encoding="utf-8")
     return out

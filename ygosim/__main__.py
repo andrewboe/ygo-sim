@@ -171,6 +171,20 @@ def cmd_packages(args):
     print(f"\nwrote {CANDIDATES}")
 
 
+def cmd_side_plans(args):
+    from .sideplan import build_side_plans
+
+    rows = build_side_plans()
+    for r in rows:
+        if "skipped" in r:
+            print(f"  skip {r['candidate']} {r['seat']}: {r['skipped'][:80]}")
+        elif args.verbose or r["candidate"].count("__") == 1:  # base variants unless --verbose
+            seat = "going first " if r["seat"] == "s1" else "going second"
+            print(f"  {r['candidate'][:44]:44} {seat}  in: {', '.join(r['in'])[:60]}")
+            print(f"  {'':44} {'':12}  out: {', '.join(r['out'])[:60]}")
+    print(f"\n{sum(1 for r in rows if 'skipped' not in r)} post-side lists written (__s1 going first, __s2 going second)")
+
+
 def cmd_screen(args):
     from itertools import groupby
 
@@ -272,6 +286,10 @@ def main():
     pk = sub.add_parser("packages", help="candidate lists: each variant, plus board-breaker packages")
     pk.add_argument("packages", nargs="*", help="package names from config/breakers.json (default: all)")
     pk.set_defaults(func=cmd_packages)
+
+    sp = sub.add_parser("side-plans", help="post-side lists per candidate and seat (games 2-3)")
+    sp.add_argument("--verbose", action="store_true", help="show every candidate, not just base variants")
+    sp.set_defaults(func=cmd_side_plans)
 
     sc = sub.add_parser("screen", help="funnel stage 1 summary: going-first and going-second scores")
     sc.set_defaults(func=cmd_screen)

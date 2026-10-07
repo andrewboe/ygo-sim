@@ -41,8 +41,14 @@ def _hand_trap_ids() -> set[int]:
         bits |= 0x4000 if "Token" in t else 0
         return bits
 
-    return {c.id for c in {c.id: c for c in card_db().values()}.values()
-            if tag(type_bits(c.type), c.desc)["hand"] > 0}
+    overrides = json.loads((Path(__file__).resolve().parent.parent / "wsl" / "card_tag_overrides.json")
+                           .read_text(encoding="utf-8"))
+    out = set()
+    for c in {c.id: c for c in card_db().values()}.values():
+        hand = overrides.get(c.name, {}).get("hand", tag(type_bits(c.type), c.desc)["hand"])
+        if hand > 0:
+            out.add(c.id)
+    return out
 
 
 def _meets(requirement: str, deck: Deck) -> bool:

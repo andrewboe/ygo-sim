@@ -21,10 +21,26 @@ CARD_TYPE_COLS = slice(15, 40)
 N_SPEC = 5             # card references per option (max_multi_select)
 
 
+CARD_FEATURES = "/mnt/c/Users/andre/Desktop/ygo-sim/data/card_features.npz"
+
+
 class Pilot(nn.Module):
-    def __init__(self, dim: int = 128, layers: int = 4, heads: int = 4):
+    def __init__(self, dim: int = 128, layers: int = 4, heads: int = 4, card_features: str | None = CARD_FEATURES):
         super().__init__()
         self.card_id = nn.Embedding(N_CARD_IDS, dim)
+        # Frozen text-derived features per card (wsl/card_features.py): tags, keyword flags, text embedding.
+        # They give unseen or rarely seen cards a meaningful representation; the id embedding adds what's
+        # specific to each card on top.
+        import os
+        import numpy as np
+        if card_features and os.path.exists(card_features):
+            feats = torch.as_tensor(np.load(card_features)["features"])
+            table = torch.zeros(N_CARD_IDS, feats.shape[1])
+            table[: len(feats)] = feats
+            self.register_buffer("card_text", table)
+            self.card_text_proj = nn.Linear(feats.shape[1], dim)
+        else:
+            self.card_text = None
         # Small categorical card fields (cols 2..10): location, seq, opponent, position, face-up,
         # attribute, race, level, counters. One shared table, offset per field.
         self.card_cat = nn.Embedding(9 * 256, dim)
@@ -46,7 +62,9 @@ class Pilot(nn.Module):
         b = cards.shape[0]
         card_ids = (cards[..., 0] << 8) | cards[..., 1]
         empty = cards[..., 2] == 0  # no location -> empty slot
-        tok = (self.card_id(card_ids.clamp(max=N_CARD_IDS - 1))
+        card_ids = card_ids.clamp(max=N_CARD_IDS - 1)
+        tok = (self.card_id(card_ids)
+               + (self.card_text_proj(self.card_text[card_ids]) if self.card_text is not None else 0)
                + self.card_cat(cards[..., 2:11] + self.cat_offsets).sum(-2)
                + self.card_type(cards[..., CARD_TYPE_COLS].reshape(-1, 25)).view(b, -1, tok_dim(self))
                + self.card_num(cards[..., 11:15].float() / 255))
