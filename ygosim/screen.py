@@ -30,8 +30,10 @@ def summarize() -> list[dict]:
             r = json.loads(line)
             second[r["candidate"]][r["opponent"]].append(r["score"])
     weights = _field_weight()
+    current = {f"cand__{r['candidate']}" for r in json.loads(
+        (DATA_DIR / "candidates" / "candidates.json").read_text(encoding="utf-8")) if "skipped" not in r}
     rows = []
-    for cand in sorted(set(first) | set(second)):
+    for cand in sorted((set(first) | set(second)) & current):  # ignore results of removed candidates
         opp = {o: sum(v) / len(v) for o, v in second[cand].items()}
         w = {o: weights.get(o, 0.0) for o in opp}
         sec = sum(opp[o] * w[o] for o in opp) / sum(w.values()) if sum(w.values()) else None
