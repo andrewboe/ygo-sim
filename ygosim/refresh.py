@@ -123,6 +123,14 @@ def refresh(days: int, ocg_days: int, min_share: float, new_share: float,
         snap = export_field(f, as_of, SNAPSHOTS / today.isoformat() / "field")
         report["field"] = snap
         report["changes"] = _diff_fields(_previous_snapshot(today), snap)
+        # Keep the candidate funnel in step with the field: variants, breaker packages, side plans.
+        from .breakers import build_candidates
+        from .sideplan import build_side_plans
+        from .variants import discover
+        discover(days)
+        made = [r for r in build_candidates() if "skipped" not in r]
+        build_side_plans()
+        report["changes"].append(f"Candidates rebuilt: {len(made)} lists with side plans")
         _write_changelog(today, report)
 
     STATE.write_text(json.dumps({
