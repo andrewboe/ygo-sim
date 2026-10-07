@@ -28,6 +28,8 @@ def load_all():
     # Opening id per example (older shards without one: each file is its own group).
     data["group"] = np.concatenate([p["group"] if "group" in p else np.full(len(p["action"]), i)
                                     for i, p in enumerate(parts)])
+    data["deck"] = np.concatenate([p["deck"] if "deck" in p else np.full(len(p["action"]), "?")
+                                   for p in parts])
     return data
 
 
@@ -47,6 +49,7 @@ def main():
     ap.add_argument("--batch", type=int, default=256)
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--holdout-deck", help="validate only on decks with this name prefix (never trained on)")
     args = ap.parse_args()
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -56,11 +59,16 @@ def main():
     n = len(data["action"])
     # Hold out whole openings: decisions from one opening share line prefixes, so a per-example split
     # would leak near-duplicate positions into validation.
-    groups = np.unique(data["group"])
-    val_groups = set(np.random.choice(groups, size=max(1, len(groups) // 10), replace=False))
-    is_val = np.array([g in val_groups for g in data["group"]])
+    if args.holdout_deck:
+        # Generalization test: the pilot never sees this deck in training (THEORY §5 pilot quality).
+        is_val = np.array([d.startswith(args.holdout_deck) for d in data["deck"]])
+        print(f"holding out every example from decks starting with {args.holdout_deck!r}: {is_val.sum()}")
+    else:
+        groups = np.unique(data["group"])
+        val_groups = set(np.random.choice(groups, size=max(1, len(groups) // 10), replace=False))
+        is_val = np.array([g in val_groups for g in data["group"]])
+        print(f"{len(groups)} openings, {len(val_groups)} held out")
     val, train = np.flatnonzero(is_val), np.flatnonzero(~is_val)
-    print(f"{len(groups)} openings, {len(val_groups)} held out")
     baseline = float(np.mean(1.0 / data["num_options"][val]))
     print(f"{n} examples ({len(train)} train / {len(val)} val); uniform-random accuracy {baseline:.1%}")
 
