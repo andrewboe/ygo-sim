@@ -87,13 +87,17 @@ def load_weights() -> dict:
     return DEFAULT_WEIGHTS
 
 
-# Card hints (as in MTG Forge, where each card script tells the AI how to use it): monster hand traps
-# are held, not set or normal summoned as bodies, unless nothing else is worth doing.
-HINT_PENALTY = -3.0
+# Card hints (as in MTG Forge, where each card script tells the AI how to use it). They shape the
+# rollout policy's defaults, so search explores sensible lines first; search can still overrule them.
+#  - monster hand traps are held, not set or normal summoned as bodies (IDLE)
+#  - on your own turn, hand traps in chain windows default to "hold" (an unhinted prior activates them
+#    ~90% of the time per window, so no rollout ever kept them: Mulcharmys burned on turn 1)
+HINT_PENALTY = -5.0      # below the end-turn prior (-3): when nothing else is known, end rather than set it
+OWN_TURN_TRAP_HINT = -2.5  # below the pass prior (-1)
 _HAND_TRAP_MONSTERS = None
 
 
-def hint_priors(cards, acts, n, tags, id_to_code) -> np.ndarray:
+def hint_priors(cards, acts, n, tags, id_to_code, msg) -> np.ndarray:
     global _HAND_TRAP_MONSTERS
     if _HAND_TRAP_MONSTERS is None:
         import sqlite3
@@ -104,8 +108,10 @@ def hint_priors(cards, acts, n, tags, id_to_code) -> np.ndarray:
     for o in range(n):
         cid = int(cards[o])
         code = id_to_code[cid] if 0 < cid < len(id_to_code) else 0
-        if code in _HAND_TRAP_MONSTERS and chr(int(acts[o])) in "ms":  # set / normal summon
+        if msg == IDLE and code in _HAND_TRAP_MONSTERS and chr(int(acts[o])) in "ms":  # set / normal summon
             out[o] = HINT_PENALTY
+        elif msg == CHAIN and tags.get(code, {}).get("hand", 0) > 0 and chr(int(acts[o])) == "h":  # from hand
+            out[o] = OWN_TURN_TRAP_HINT
     return out
 
 
@@ -184,9 +190,9 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
             elif int(info["to_play"][i]) == player:
                 hashes = info["option_hash_"][i][:n].tolist()
                 priors = np.array([PRIOR[int(x)] for x in kinds])
-                if int(info["msg"][i]) == IDLE:
+                if int(info["msg"][i]) in (IDLE, CHAIN):
                     priors = priors + hint_priors(info["option_card_"][i][:n], info["option_act_"][i][:n], n,
-                                                  tags, id_to_code)
+                                                  tags, id_to_code, int(info["msg"][i]))
                 if greedy:
                     acts[i] = int(np.argmax(np.array([weights[h] for h in hashes]) + priors))
                 else:
