@@ -10,6 +10,6 @@ bash $W/build_core.sh
 cd ~/ygo/ygo-agent
 cp $W/edopro-core.xmake.lua repo/packages/e/edopro-core/xmake.lua
 # Force xmake to re-install the freshly built core.
-rm -rf ~/.xmake/cache/packages/*/e/edopro-core ~/.xmake/packages/e/edopro-core
+rm -rf ~/.xmake/cache/packages/*/e/edopro-core ~/.xmake/packages/e/edopro-core build/.packages/e/edopro-core
 xmake f -y -m "$MODE" 2>&1 | grep -E 'error|failed' || true
 bash $W/rebuild.sh
