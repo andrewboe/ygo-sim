@@ -55,6 +55,49 @@
     return static_cast<int32_t>(h);
   }
 
+  // Apply this env's staged hidden identities (stage_hidden): hand/deck/extra by index, face-down
+  // field cards by order (S/T zones, then monster zones), or a permutation of the deck's codes.
+  void ygosim_apply_staged() {
+    std::vector<int> e;
+    {
+      std::lock_guard<std::mutex> lock(g_ygosim_stage_mtx);
+      auto it = g_ygosim_stage.find(env_id_);
+      if (it == g_ygosim_stage.end()) {
+        return;
+      }
+      e.swap(it->second);
+      g_ygosim_stage.erase(it);
+    }
+    for (size_t k = 0; k + 3 < e.size(); k += 4) {
+      auto p = static_cast<PlayerId>(e[k]);
+      int loc = e[k + 1], idx = e[k + 2];
+      auto code = static_cast<uint32_t>(e[k + 3]);
+      if (loc == 0x100) {
+        int n = 0;
+        for (uint8_t l : {uint8_t(LOCATION_SZONE), uint8_t(LOCATION_MZONE)}) {
+          for (const auto &c : get_cards_in_location(p, l)) {
+            if ((c.position_ & POS_FACEDOWN) && !(c.location_ & LOCATION_OVERLAY) && n++ == idx) {
+              YGOSIM_SetCardCode(pduel_, p, l, c.sequence_, code);
+            }
+          }
+        }
+      } else if (loc == 0x200) {
+        auto cards = get_cards_in_location(p, LOCATION_DECK);
+        std::vector<uint32_t> codes;
+        for (const auto &c : cards) {
+          codes.push_back(c.code_);
+        }
+        std::mt19937 g(static_cast<uint32_t>(idx));
+        std::shuffle(codes.begin(), codes.end(), g);
+        for (size_t j = 0; j < cards.size(); ++j) {
+          YGOSIM_SetCardCode(pduel_, p, LOCATION_DECK, cards[j].sequence_, codes[j]);
+        }
+      } else {
+        YGOSIM_SetCardCode(pduel_, p, static_cast<uint32_t>(loc), static_cast<uint32_t>(idx), code);
+      }
+    }
+  }
+
   void ygosim_write_info(State &state) {
     state["info:turn"_] = turn_count_;
     state["info:msg"_] = msg_;
@@ -86,6 +129,15 @@
       for (const auto &c : get_cards_in_location(p, LOCATION_HAND)) {
         if (h < 15) {
           state["info:hand_codes_"_](p, h++) = static_cast<int>(c.code_);
+        }
+      }
+      // Public cards beyond the field: graveyard and face-up banished (belief.py's evidence).
+      int u = 0;
+      for (uint8_t loc : {uint8_t(LOCATION_GRAVE), uint8_t(LOCATION_REMOVED)}) {
+        for (const auto &c : get_cards_in_location(p, loc)) {
+          if (u < 40 && !(loc == LOCATION_REMOVED && (c.position_ & POS_FACEDOWN))) {
+            state["info:public_codes_"_](p, u++) = static_cast<int>(c.code_);
+          }
         }
       }
     }

@@ -31,19 +31,22 @@ import numpy as np
 sys.path.insert(0, os.path.expanduser("~/ygo/ygo-agent/ygoenv"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ygoenv  # noqa: E402
+from ygoenv.edopro.edopro_ygoenv import stage_hidden  # noqa: E402
+from belief import REDEAL  # noqa: E402
 from goldfish import (CHAIN, KIND_ACTION, KIND_END, KIND_PASS, KIND_PHASE, MAX_OPTIONS, PRIOR, REPLAY, adapt,  # noqa: E402
                       load, sample, set_opening)
 from card_tags import all_tags  # noqa: E402
 
 INFO_KEYS = ("num_options", "option_kinds_", "option_hash_", "option_card_", "option_act_", "to_play",
-             "turn", "turn_player", "msg", "lp_", "field_codes_", "hand_codes_")
+             "turn", "turn_player", "msg", "lp_", "field_codes_", "hand_codes_", "public_codes_", "board_")
 WIN = 100.0
 MAX_TURN_STEPS = 400   # decisions within one searched turn
 YESNO = (12, 13)       # MSG_SELECT_EFFECTYN, MSG_SELECT_YESNO
 IDLE = 11              # MSG_SELECT_IDLECMD
 # Pilot/engine version, logged with every result; stage2.py and review.py only use matching games.
 # v1 (unlogged): committed rollout transcripts. v2: each player plays its own learned policy.
-CONFIG = "v2-policy-commit"
+CONFIG = "v3-belief"  # v3: hidden information re-dealt from a belief in every search rollout
+HIDDEN_INFO = True
 
 
 @dataclass
@@ -179,7 +182,8 @@ def search_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, r
     best = TurnRollout()
     batch = []
     for _ in range(gens):
-        batch = turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, resp_weights)
+        batch = turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, resp_weights,
+                           belief=BELIEF, decider=player)
         top = max(batch, key=lambda r: r.score)
         if top.score > best.score:
             best = top
@@ -194,18 +198,22 @@ def search_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, r
 
 
 def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, resp_weights=None,
-               greedy=False, stop_unseen=False, stop_windows=False, first_actions=None) -> list[TurnRollout]:
+               greedy=False, stop_unseen=False, stop_windows=False, first_actions=None, belief=None,
+               decider=None) -> list[TurnRollout]:
     """K rollouts: replay `history`, then `player` plays turn `turn` by softmax policy (greedy: each
     player takes its policy's most likely choice, no exploration; stop_unseen: stop at the first
     turn-player choice between 2+ actions that the search never visited, for re-planning;
     stop_windows: stop where the non-turn player can use a tagged interruption or pass;
-    first_actions[i]: env i's first move after `history`, for comparing choices at one decision)."""
+    first_actions[i]: env i's first move after `history`, for comparing choices at one decision;
+    belief: before `decider`'s first decision after `history`, each env re-deals what the decider
+    can't see from the belief (belief.py), so search can't use hidden cards)."""
     _, info = envs.reset()
     info = {key: info[key].copy() for key in INFO_KEYS}
     out = [TurnRollout() for _ in range(k)]
     active = np.ones(k, dtype=bool)
     last_turn_act = np.zeros(k, dtype=int)
     last_actor = np.zeros(k, dtype=int)  # env reward is relative to whoever made the last move
+    redealt = np.zeros(k, dtype=bool)
     for _ in range(len(history) + MAX_TURN_STEPS):
         if not active.any():
             break
@@ -216,6 +224,11 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
             t = len(out[i].actions)
             if t < len(history):  # replay flag on all but the last forced move (see goldfish.REPLAY)
                 acts[i] = history[t] + (REPLAY if t < len(history) - 1 else 0)
+            elif belief is not None and not redealt[i] and int(info["to_play"][i]) == decider:
+                stage_hidden(int(i), belief.sample(rng, decider, info, i))
+                acts[i] = REDEAL  # same decision, hidden cards re-dealt; not part of the history
+                redealt[i] = True
+                continue
             elif first_actions is not None and t == len(history):
                 acts[i] = first_actions[i]
             elif int(info["to_play"][i]) == player:
@@ -307,7 +320,7 @@ def choose_window(envs, k, prefix, options, player, turn, weights, resp_weights,
     options[0] and wins ties."""
     first = [options[i % len(options)] for i in range(k)]
     batch = turn_batch(envs, k, prefix, player, turn, weights, tags, id_to_code, rng, resp_weights,
-                       first_actions=first)
+                       first_actions=first, belief=BELIEF, decider=1 - player)
     totals = defaultdict(list)
     for i, r in enumerate(batch):
         totals[first[i]].append(r.score)
@@ -355,7 +368,15 @@ def current_state(envs, k, history):
     return int(info["turn"][0]), int(info["turn_player"][0]), info
 
 
+# Hidden-information belief (belief.py) used by every search; None = clairvoyant search (pilot v2).
+BELIEF = None
+
+
 def play_game(envs, k, game_seed, max_turns, gens, alpha, tags, id_to_code, names=None, log=None) -> dict:
+    global BELIEF
+    if BELIEF is None and HIDDEN_INFO:
+        from belief import Belief
+        BELIEF = Belief()
     set_opening(game_seed)
     rng = np.random.default_rng(game_seed)
     history, lp = [], (8000, 8000)

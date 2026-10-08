@@ -22,6 +22,12 @@ PATCHES = [
     # Replay flag: action + 1000 = "replaying a known line, skip building info for the next state".
     ("edopro/edopro.h", "    int idx = action[\"action\"_];\n    callback_(idx);",
      "    int idx = action[\"action\"_];\n"
+     "    if (idx >= 3000000) {  // ygosim re-deal: apply staged hidden identities, same decision\n"
+     "      ygosim_replay_ = false;\n"
+     "      ygosim_apply_staged();\n"
+     "      WriteState(0.0);\n"
+     "      return;\n"
+     "    }\n"
      "    ygosim_replay_ = idx >= 1000;\n"
      "    if (ygosim_replay_) {\n      idx -= 1000;\n    }\n"
      "    check_callback();\n    callback_(idx);"),
@@ -276,6 +282,7 @@ PATCHES = [
      "        \"info:board_\"_.Bind(Spec<int>({2, 7})),\n"
      "        \"info:field_codes_\"_.Bind(Spec<int>({2, 13})),\n"
      "        \"info:hand_codes_\"_.Bind(Spec<int>({2, 15})),\n"
+     "        \"info:public_codes_\"_.Bind(Spec<int>({2, 40})),\n"
      "        \"info:option_kinds_\"_.Bind(Spec<uint8_t>({conf[\"max_options\"_]})),\n"
      "        \"info:option_hash_\"_.Bind(Spec<int>({conf[\"max_options\"_]})),\n"
      "        \"info:option_card_\"_.Bind(Spec<int>({conf[\"max_options\"_]})),\n"
@@ -298,17 +305,28 @@ PATCHES = [
      "    if (duel_seed_ >= 0) {  // ygosim: every env deals opening (duel_seed + set_opening(n))\n"
      "      gen_.seed(static_cast<uint64_t>(duel_seed_ + g_ygosim_opening.load()));\n"
      "    }\n"),
-    ("edopro/edopro.h", "#include <shared_mutex>\n", "#include <shared_mutex>\n#include <atomic>\n"),
+    ("edopro/edopro.h", "#include <shared_mutex>\n",
+     "#include <shared_mutex>\n#include <atomic>\n#include <map>\n#include <mutex>\n#include <random>\n"),
     ("edopro/edopro.h",
      "static void init_module(const std::string &db_path,",
      "// ygosim: which opening deterministic (duel_seed >= 0) envs deal on their next reset.\n"
      "static std::atomic<int64_t> g_ygosim_opening{0};\n"
      "static void set_opening(int64_t n) { g_ygosim_opening.store(n); }\n\n"
+     "// ygosim: hidden-card identities staged per env (belief.py), applied by the re-deal action\n"
+     "// (action 3000000). Flat list of (player, location, index, code); location 0x100 = the index-th\n"
+     "// face-down card on the field, 0x200 = permute the codes of the player's deck (index = seed).\n"
+     "static std::mutex g_ygosim_stage_mtx;\n"
+     "static std::map<int, std::vector<int>> g_ygosim_stage;\n"
+     "static void stage_hidden(int env_id, std::vector<int> entries) {\n"
+     "  std::lock_guard<std::mutex> lock(g_ygosim_stage_mtx);\n"
+     "  g_ygosim_stage[env_id] = std::move(entries);\n"
+     "}\n\n"
      "static void init_module(const std::string &db_path,"),
     ("edopro/edopro.cpp",
      "  m.def(\"init_module\", &edopro::init_module);",
      "  m.def(\"init_module\", &edopro::init_module);\n"
-     "  m.def(\"set_opening\", &edopro::set_opening);"),
+     "  m.def(\"set_opening\", &edopro::set_opening);\n"
+     "  m.def(\"stage_hidden\", &edopro::stage_hidden);"),
     ("edopro/edopro.h",
      "    state[\"info:win_reason\"_] = win_reason;\n",
      "    state[\"info:win_reason\"_] = win_reason;\n"
