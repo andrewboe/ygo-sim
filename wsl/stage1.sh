@@ -20,7 +20,7 @@ for p in ~/ygo/run/decks/cand__*.ydk; do
   done_first=$(cat "$DATA/search/${c}__goldfish.jsonl" 2>/dev/null | wc -l)
   need_second=0
   for o in $opponents; do
-    n=$(grep -c "\"candidate\": \"$c\", \"opponent\": \"$o\"" "$DATA/screen/second.jsonl" 2>/dev/null || echo 0)
+    n=$(grep -c "\"candidate\": \"$c\", \"opponent\": \"$o\"" "$DATA/screen/second.jsonl" 2>/dev/null); n=${n:-0}
     [ "$n" -lt "$games" ] && need_second=1
   done
   [ "$done_first" -ge "$hands" ] && [ "$need_second" = 0 ] && continue
@@ -32,7 +32,7 @@ for p in ~/ygo/run/decks/cand__*.ydk; do
     echo "== $c | first: $g"
   fi
   for o in $opponents; do
-    n=$(grep -c "\"candidate\": \"$c\", \"opponent\": \"$o\"" "$DATA/screen/second.jsonl" 2>/dev/null || echo 0)
+    n=$(grep -c "\"candidate\": \"$c\", \"opponent\": \"$o\"" "$DATA/screen/second.jsonl" 2>/dev/null); n=${n:-0}
     if [ "$n" -lt "$games" ]; then
       TIMEOUT=7200 bash $W/run_py.sh second_screen.py "$c" "$o" --games "$games" 2>&1 | grep --line-buffered "score"
     fi
