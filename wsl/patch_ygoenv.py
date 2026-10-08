@@ -192,15 +192,17 @@ PATCHES = [
      "  std::string path(name);\n"
      "  const char *buf = nullptr;\n"
      "  int len = 0;\n"
+     "  bool cached = false;\n"
      "  {\n"
      "    std::shared_lock<std::shared_timed_mutex> lock(scripts_mtx);\n"
      "    auto it = cards_script_.find(path);\n"
      "    if (it != cards_script_.end()) {\n"
      "      buf = it->second.buf;\n"
      "      len = it->second.len;\n"
+     "      cached = true;\n"
      "    }\n"
      "  }\n"
-     "  if (buf == nullptr && len == 0) {\n"
+     "  if (!cached) {  // missing scripts are cached too (empty), not re-opened every duel\n"
      "    const char *fresh = read_card_script(path, &len);\n"
      "    std::unique_lock<std::shared_timed_mutex> ulock(scripts_mtx);\n"
      "    auto [it, inserted] = cards_script_.try_emplace(path, card_script{fresh, len});\n"
@@ -211,6 +213,40 @@ PATCHES = [
      "    len = it->second.len;\n"
      "  }\n"
      "  auto res = len && OCG_LoadScript(duel, buf, static_cast<uint32_t>(len), name);"),
+    # Bytecode cache: every new duel re-runs ~0.5 MB of utility scripts plus each card's script, and
+    # compiling that source dominated reset time. Cache compiled Lua bytecode instead (luaL_loadbuffer
+    # accepts binary chunks; same name, so error messages and chunk names are unchanged).
+    ("edopro/edopro.h", "    const char *fresh = read_card_script(path, &len);\n",
+     "    const char *fresh = ygosim_precompile(read_card_script(path, &len), &len, name);\n"),
+    ("edopro/edopro.h", "inline const char *read_card_script(",
+     "static int ygosim_dump_writer(lua_State *, const void *p, size_t sz, void *ud) {\n"
+     "  static_cast<std::string *>(ud)->append(static_cast<const char *>(p), sz);\n"
+     "  return 0;\n"
+     "}\n\n"
+     "// Source -> bytecode (keeps debug info). Falls back to the source if it doesn't compile, so the\n"
+     "// core still reports the error the usual way.\n"
+     "inline const char *ygosim_precompile(const char *src, int *len, const char *name) {\n"
+     "  if (src == nullptr || *len <= 0) {\n"
+     "    return src;\n"
+     "  }\n"
+     "  lua_State *L = luaL_newstate();\n"
+     "  std::string out;\n"
+     "  if (luaL_loadbufferx(L, src, static_cast<size_t>(*len), name, \"t\") == LUA_OK) {\n"
+     "    lua_dump(L, ygosim_dump_writer, &out, 0);\n"
+     "  }\n"
+     "  lua_close(L);\n"
+     "  if (out.empty()) {\n"
+     "    return src;\n"
+     "  }\n"
+     "  char *buf = new char[out.size()];\n"
+     "  std::memcpy(buf, out.data(), out.size());\n"
+     "  delete[] src;\n"
+     "  *len = static_cast<int>(out.size());\n"
+     "  return buf;\n"
+     "}\n\n"
+     "inline const char *read_card_script("),
+    ("edopro/edopro.h", "#include \"edopro-core/ocgapi.h\"\n",
+     "#include \"edopro-core/ocgapi.h\"\n#include \"lua.h\"\n#include \"lauxlib.h\"\n"),
     # Quiet a known ygo-agent TODO (option spec missing from the obs index; it falls back to idx 1)
     # that otherwise dumps the whole index to stdout. Set YGOSIM_TRACE_SPEC=1 to see it.
     ("edopro/edopro.h",
