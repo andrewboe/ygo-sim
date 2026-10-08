@@ -125,11 +125,33 @@ def evaluate(info, i, p, tags, id_to_code) -> float:
     return sum(EVAL_WEIGHTS.get(k, 0.0) * v for k, v in f.items())
 
 
+_DRAW_TRAPS = None
+
+
+def draw_traps() -> set:
+    """Draw-on-summon hand traps (Mulcharmys, Maxx "C"): passcodes whose text draws each time the
+    opponent summons. Real players activate them in the opponent's Standby Phase, before any summon:
+    a summon already made doesn't draw."""
+    global _DRAW_TRAPS
+    if _DRAW_TRAPS is None:
+        import re
+        import sqlite3
+        db = sqlite3.connect(os.path.expanduser("~/ygo/run/cards.cdb"))
+        pat = re.compile(r"each time your opponent [^.]*summons[^.]*draw", re.I)
+        _DRAW_TRAPS = {c for c, d in db.execute("select id, desc from texts") if d and pat.search(d)}
+    return _DRAW_TRAPS
+
+
 def respond(info, i, n, kinds, tags, id_to_code, last_turn_act) -> int:
     """Heuristic for the non-turn player."""
     passes = np.flatnonzero(kinds == KIND_PASS)
     acting = [o for o in range(n) if kinds[o] != KIND_PASS]
     msg = int(info["msg"][i])
+    if msg == CHAIN and acting and last_turn_act == 0:  # before the turn player has done anything
+        code = lambda o: id_to_code[int(info["option_card_"][i][o])] if int(info["option_card_"][i][o]) < len(id_to_code) else 0
+        early = [o for o in acting if code(o) in draw_traps()]
+        if early:
+            return early[0]
     if msg == CHAIN and acting and last_turn_act in (ord("v"), ord("s"), ord("c")):
         def value(o):
             cid = int(info["option_card_"][i][o])
