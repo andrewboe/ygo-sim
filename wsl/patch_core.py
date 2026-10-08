@@ -12,7 +12,7 @@ import subprocess
 import sys
 
 ROOT = os.path.expanduser("~/ygo/edopro-core")
-STEP_LIMIT_S = 2
+STEP_LIMIT_S = 0.1  # CPU seconds; normal process calls take milliseconds
 
 PATCHES = [
     ("interpreter.cpp", '#include "scriptlib.h"\n',
