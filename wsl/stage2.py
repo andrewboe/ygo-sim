@@ -39,8 +39,15 @@ def play(first: str, second: str, games: int, seed_offset: int, extra: list[str]
         return
     cmd = ["bash", f"{W}/run_py.sh", "game.py", first, second, "--games", str(games),
            "--first-game", str(seed_offset), *extra]
-    subprocess.run(cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                   env={**os.environ, "TIMEOUT": "7200"})
+    p = subprocess.run(cmd, check=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                       env={**os.environ, "TIMEOUT": "7200"})
+    done_after = {r["game"] for r in results() if r["first"] == first and r["second"] == second}
+    if p.returncode != 0 or not all(g in done_after for g in range(seed_offset, seed_offset + games)):
+        # Keep the evidence: a batch that logged no games used to vanish silently.
+        tail = [l for l in p.stdout.splitlines() if "Unable to open script" not in l][-25:]
+        with open(f"{DATA}/games/stage2_errors.log", "a") as f:
+            f.write(f"== {first} vs {second} games {seed_offset}+{games}: exit {p.returncode}\n"
+                    + "\n".join(tail) + "\n")
 
 
 def results() -> list[dict]:
@@ -98,7 +105,10 @@ def main():
         for c in ranked:
             r, se, n = stats[c]
             print(f"  {r:5.1%} +- {se:4.1%}  ({n:4} games)  {c}", flush=True)
-        survivors = [c for c in ranked if stats[c][0] + args.z * stats[c][1] >= leader_lo]
+        failed = [c for c in ranked if stats[c][2] == 0]  # every batch errored: don't judge it unplayed
+        if failed:
+            print(f"  no games (see data/games/stage2_errors.log), kept: {', '.join(failed)}", flush=True)
+        survivors = [c for c in ranked if stats[c][0] + args.z * stats[c][1] >= leader_lo or c in failed]
         survivors = survivors[:max(args.finalists, math.ceil(len(survivors) * args.keep))]
         dropped = [c for c in alive if c not in survivors]
         if dropped:
