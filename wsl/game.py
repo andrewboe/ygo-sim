@@ -31,7 +31,7 @@ import numpy as np
 sys.path.insert(0, os.path.expanduser("~/ygo/ygo-agent/ygoenv"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ygoenv  # noqa: E402
-from goldfish import (CHAIN, KIND_END, KIND_PASS, KIND_PHASE, MAX_OPTIONS, PRIOR, REPLAY, adapt,  # noqa: E402
+from goldfish import (CHAIN, KIND_ACTION, KIND_END, KIND_PASS, KIND_PHASE, MAX_OPTIONS, PRIOR, REPLAY, adapt,  # noqa: E402
                       load, sample, set_opening)
 from card_tags import all_tags  # noqa: E402
 
@@ -55,6 +55,8 @@ class TurnRollout:
     ended: bool = False                           # game over during this turn
     winner: int = -1
     unseen_at: int | None = None                  # greedy play stopped here: a choice search never saw
+    window_at: int | None = None                  # greedy play stopped here: a hand-trap timing window
+    window_options: list = field(default_factory=list)
 
 
 FEATURES = ("bias", "lp_diff_k", "own_tagged", "opp_tagged", "own_field", "opp_field",
@@ -191,10 +193,12 @@ def search_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, r
 
 
 def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, resp_weights=None,
-               greedy=False, stop_unseen=False) -> list[TurnRollout]:
+               greedy=False, stop_unseen=False, stop_windows=False, first_actions=None) -> list[TurnRollout]:
     """K rollouts: replay `history`, then `player` plays turn `turn` by softmax policy (greedy: each
     player takes its policy's most likely choice, no exploration; stop_unseen: stop at the first
-    turn-player choice between 2+ actions that the search never visited, for re-planning)."""
+    turn-player choice between 2+ actions that the search never visited, for re-planning;
+    stop_windows: stop where the non-turn player can use a tagged interruption or pass;
+    first_actions[i]: env i's first move after `history`, for comparing choices at one decision)."""
     _, info = envs.reset()
     info = {key: info[key].copy() for key in INFO_KEYS}
     out = [TurnRollout() for _ in range(k)]
@@ -211,6 +215,8 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
             t = len(out[i].actions)
             if t < len(history):  # replay flag on all but the last forced move (see goldfish.REPLAY)
                 acts[i] = history[t] + (REPLAY if t < len(history) - 1 else 0)
+            elif first_actions is not None and t == len(history):
+                acts[i] = first_actions[i]
             elif int(info["to_play"][i]) == player:
                 hashes = info["option_hash_"][i][:n].tolist()
                 priors = np.array([PRIOR[int(x)] for x in kinds])
@@ -227,6 +233,12 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
                     acts[i], _ = sample(hashes, priors, weights, rng)
                 out[i].trace.append((hashes, priors, int(acts[i])))
                 last_turn_act[i] = int(info["option_act_"][i][acts[i]])
+            elif stop_windows and (kinds == KIND_PASS).any() and \
+                    (live := live_interruptions(info, i, n, kinds, tags, id_to_code)):
+                out[i].window_at = len(out[i].actions)
+                out[i].window_options = [int(np.flatnonzero(kinds == KIND_PASS)[0])] + live
+                active[i] = False
+                continue
             elif resp_weights is not None and int(info["msg"][i]) == CHAIN and \
                     (kinds == KIND_PASS).any() and (kinds != KIND_PASS).any():
                 # Response window: the responder's learned policy, starting from the heuristic's
@@ -266,22 +278,59 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
 
 
 MAX_REPLANS = 4
+MAX_WINDOWS = 6      # hand-trap timing comparisons per real turn
+WINDOW_OPTIONS = 3   # pass + the best tagged interruptions
+
+
+def live_interruptions(info, i, n, kinds, tags, id_to_code) -> list[int]:
+    """Options of the non-turn player that use a tagged interruption (hand trap, set or face-up
+    quick effect), best first; empty if none."""
+    def value(o):
+        cid = int(info["option_card_"][i][o])
+        code = id_to_code[cid] if 0 < cid < len(id_to_code) else 0
+        t = tags.get(code, {})
+        return max(t.get("field", 0.0), t.get("set", 0.0), t.get("hand", 0.0))
+    acting = [o for o in range(n) if kinds[o] == KIND_ACTION and value(o) > 0]
+    return sorted(acting, key=lambda o: -value(o))[:WINDOW_OPTIONS - 1]
+
+
+def choose_window(envs, k, prefix, options, player, turn, weights, resp_weights, tags, id_to_code, rng) -> int:
+    """Hand-trap timing for the non-turn player: play the rest of the turn out after each option
+    (k envs split across options; both sides by their learned policies, with exploration) and take
+    the option that leaves the turn player worst off. Pass is options[0] and wins ties."""
+    first = [options[i % len(options)] for i in range(k)]
+    batch = turn_batch(envs, k, prefix, player, turn, weights, tags, id_to_code, rng, resp_weights,
+                       first_actions=first)
+    totals = defaultdict(list)
+    for i, r in enumerate(batch):
+        totals[first[i]].append(r.score)
+    mean = {o: float(np.mean(v)) for o, v in totals.items()}
+    return min(options, key=lambda o: (mean.get(o, float("inf")), o != options[0]))
 
 
 def play_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, rng) -> TurnRollout:
     """The real turn: search, then both players play their learned policies greedily, decision by
     decision. When play reaches a choice the search never visited (the real responses differed from
-    every rollout), re-plan from that exact point with a smaller search and merge what it learns."""
+    every rollout), re-plan from that exact point with a smaller search and merge what it learns. At
+    each window where the non-turn player could interrupt, it compares using each live interruption
+    now against holding (choose_window), the hand-trap timing THEORY §2 is about."""
     weights, resp_weights = search_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, rng)
-    for _ in range(MAX_REPLANS):
-        r = turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, resp_weights,
-                       greedy=True, stop_unseen=True)[0]
-        if r.unseen_at is None:
+    prefix, replans, windows = list(history), 0, 0
+    while True:
+        r = turn_batch(envs, k, prefix, player, turn, weights, tags, id_to_code, rng, resp_weights, greedy=True,
+                       stop_unseen=replans < MAX_REPLANS, stop_windows=windows < MAX_WINDOWS)[0]
+        if r.unseen_at is not None:  # a choice the search never visited: re-plan from here
+            replans += 1
+            w2, r2 = search_turn(envs, k, r.actions, player, turn, max(3, gens // 2), alpha, tags, id_to_code, rng)
+            weights.update(w2)
+            resp_weights.update(r2)
+            prefix = r.actions
+        elif r.window_at is not None:  # the opponent can interrupt here: use now or hold?
+            windows += 1
+            prefix = r.actions + [choose_window(envs, k, r.actions, r.window_options, player, turn, weights,
+                                                resp_weights, tags, id_to_code, rng)]
+        else:
             return r
-        w2, r2 = search_turn(envs, k, r.actions, player, turn, max(3, gens // 2), alpha, tags, id_to_code, rng)
-        weights.update(w2)
-        resp_weights.update(r2)
-    return turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, resp_weights, greedy=True)[0]
 
 
 def current_state(envs, k, history):
