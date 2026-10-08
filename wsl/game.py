@@ -66,8 +66,11 @@ class TurnRollout:
 FEATURES = ("bias", "lp_diff_k", "own_tagged", "opp_tagged", "own_field", "opp_field",
             "own_hand", "opp_hand", "own_hand_traps", "went_first")
 # Hand-picked starting weights (THEORY §5.1); replaced by eval_weights.json once fitted from outcomes.
+# A card is a card: hand and field cards both count 0.3 (field monsters are attackers, materials and
+# blockers; without it, Evenly Matched banishing two attackers scored as worthless), plus tagged
+# interruption value on top.
 DEFAULT_WEIGHTS = {"lp_diff_k": 1.0, "own_tagged": 1.0, "opp_tagged": -1.0, "own_hand": 0.3, "opp_hand": -0.3,
-                   "own_hand_traps": 1.0}
+                   "own_field": 0.3, "opp_field": -0.3, "own_hand_traps": 1.0}
 WEIGHTS_FILE = "/mnt/c/Users/andre/Desktop/ygo-sim/data/games/eval_weights.json"
 
 
@@ -337,7 +340,7 @@ def play_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, rng
     each window where the non-turn player could interrupt, it compares using each live interruption
     now against holding (choose_window), the hand-trap timing THEORY §2 is about."""
     weights, resp_weights = search_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, rng)
-    prefix, replans, windows = list(history), 0, 0
+    prefix, replans, windows, held = list(history), 0, 0, set()
     while True:
         r = turn_batch(envs, k, prefix, player, turn, weights, tags, id_to_code, rng, resp_weights, greedy=True,
                        stop_unseen=replans < MAX_REPLANS, stop_windows=windows < MAX_WINDOWS)[0]
@@ -351,10 +354,17 @@ def play_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, rng
             resp_weights.update(r2)
             prefix = r.actions
         elif r.window_at is not None:  # the opponent can interrupt here: use now or hold?
+            key = tuple(sorted(r.window_cards))
+            if key in held:  # same cards, already judged "hold" this turn: don't spend budget again
+                prefix = r.actions + [r.window_options[0]]
+                continue
             windows += 1
-            prefix = r.actions + [choose_window(envs, k, r.actions, r.window_options, player, turn, weights,
-                                                resp_weights, tags, id_to_code, rng)]
+            choice = choose_window(envs, k, r.actions, r.window_options, player, turn, weights, resp_weights,
+                                   tags, id_to_code, rng)
             WINDOW_LOG[-1]["cards"] = r.window_cards
+            if choice == r.window_options[0]:
+                held.add(key)
+            prefix = r.actions + [choice]
         else:
             return r
 
