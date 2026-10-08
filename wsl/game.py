@@ -54,6 +54,7 @@ class TurnRollout:
     score: float = float("-inf")
     ended: bool = False                           # game over during this turn
     winner: int = -1
+    unseen_at: int | None = None                  # greedy play stopped here: a choice search never saw
 
 
 FEATURES = ("bias", "lp_diff_k", "own_tagged", "opp_tagged", "own_field", "opp_field",
@@ -168,9 +169,10 @@ def search_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, r
 
 
 def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, resp_weights=None,
-               greedy=False) -> list[TurnRollout]:
+               greedy=False, stop_unseen=False) -> list[TurnRollout]:
     """K rollouts: replay `history`, then `player` plays turn `turn` by softmax policy (greedy: each
-    player takes its policy's most likely choice, no exploration)."""
+    player takes its policy's most likely choice, no exploration; stop_unseen: stop at the first
+    turn-player choice between 2+ actions that the search never visited, for re-planning)."""
     _, info = envs.reset()
     info = {key: info[key].copy() for key in INFO_KEYS}
     out = [TurnRollout() for _ in range(k)]
@@ -193,8 +195,12 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
                 if int(info["msg"][i]) in (IDLE, CHAIN):
                     priors = priors + hint_priors(info["option_card_"][i][:n], info["option_act_"][i][:n], n,
                                                   tags, id_to_code, int(info["msg"][i]))
+                if stop_unseen and int((kinds == 0).sum()) >= 2 and not any(weights.get(h, 0.0) for h in hashes):
+                    out[i].unseen_at = len(out[i].actions)
+                    active[i] = False
+                    continue
                 if greedy:
-                    acts[i] = int(np.argmax(np.array([weights[h] for h in hashes]) + priors))
+                    acts[i] = int(np.argmax(np.array([weights.get(h, 0.0) for h in hashes]) + priors))
                 else:
                     acts[i], _ = sample(hashes, priors, weights, rng)
                 out[i].trace.append((hashes, priors, int(acts[i])))
@@ -207,7 +213,7 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
                 pref = respond(info, i, n, kinds, tags, id_to_code, last_turn_act[i])
                 priors = np.where(np.arange(n) == pref, 1.0, 0.0)
                 if greedy:
-                    acts[i] = int(np.argmax(np.array([resp_weights[h] for h in hashes]) + priors))
+                    acts[i] = int(np.argmax(np.array([resp_weights.get(h, 0.0) for h in hashes]) + priors))
                 else:
                     acts[i], _ = sample(hashes, priors, resp_weights, rng)
                 out[i].resp_trace.append((hashes, priors, int(acts[i])))
@@ -237,6 +243,25 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
     return out
 
 
+MAX_REPLANS = 4
+
+
+def play_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, rng) -> TurnRollout:
+    """The real turn: search, then both players play their learned policies greedily, decision by
+    decision. When play reaches a choice the search never visited (the real responses differed from
+    every rollout), re-plan from that exact point with a smaller search and merge what it learns."""
+    weights, resp_weights = search_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, rng)
+    for _ in range(MAX_REPLANS):
+        r = turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, resp_weights,
+                       greedy=True, stop_unseen=True)[0]
+        if r.unseen_at is None:
+            return r
+        w2, r2 = search_turn(envs, k, r.actions, player, turn, max(3, gens // 2), alpha, tags, id_to_code, rng)
+        weights.update(w2)
+        resp_weights.update(r2)
+    return turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, resp_weights, greedy=True)[0]
+
+
 def current_state(envs, k, history):
     """Replay history; return (turn, turn player, decision player) at the next decision."""
     _, info = envs.reset()
@@ -264,10 +289,7 @@ def play_game(envs, k, game_seed, max_turns, gens, alpha, tags, id_to_code, name
                 f"P1 field {show(info['field_codes_'][0][1])}")
         if turn > max_turns:
             break
-        weights, resp_weights = search_turn(envs, k, history, tp, turn, gens, alpha, tags, id_to_code, rng)
-        # The real turn: both players play their learned policies greedily, decision by decision.
-        best = turn_batch(envs, k, history, tp, turn, weights, tags, id_to_code, rng, resp_weights,
-                          greedy=True)[0]
+        best = play_turn(envs, k, history, tp, turn, gens, alpha, tags, id_to_code, rng)
         history = best.actions
         if best.ended:
             if log:
