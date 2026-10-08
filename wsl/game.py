@@ -396,7 +396,7 @@ def main():
     ap.add_argument("first", help="deck going first (player 0)")
     ap.add_argument("second", help="deck going second (player 1)")
     ap.add_argument("--games", type=int, default=4)
-    ap.add_argument("--max-turns", type=int, default=8)
+    ap.add_argument("--max-turns", type=int, default=12)  # 8 cut off 3 of 6 audit games once interruptions were used
     ap.add_argument("--rollouts", type=int, default=32)
     ap.add_argument("--generations", type=int, default=10)
     ap.add_argument("--alpha", type=float, default=1.0)
