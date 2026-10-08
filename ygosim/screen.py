@@ -26,9 +26,13 @@ def summarize() -> list[dict]:
     second = defaultdict(lambda: defaultdict(list))
     path = DATA_DIR / "screen" / "second.jsonl"
     if path.exists():
+        # Interrupted or overlapping runs can repeat a game: keep one result per (game, seed).
+        games = {}
         for line in path.read_text(encoding="utf-8").splitlines():
             r = json.loads(line)
-            second[r["candidate"]][r["opponent"]].append(r["score"])
+            games[(r["candidate"], r["opponent"], r["game"], r["seed"])] = r["score"]
+        for (cand, opp, _, _), score in games.items():
+            second[cand][opp].append(score)
     weights = _field_weight()
     current = {f"cand__{r['candidate']}" for r in json.loads(
         (DATA_DIR / "candidates" / "candidates.json").read_text(encoding="utf-8")) if "skipped" not in r}
@@ -41,5 +45,7 @@ def summarize() -> list[dict]:
         deck, _, rest = name.partition("__")
         rows.append({"candidate": name, "deck": deck, "variant": rest,
                      "first": sum(first[cand]) / len(first[cand]) if first[cand] else None,
-                     "first_n": len(first[cand]), "second": sec, "second_by_opponent": opp})
+                     "first_n": len(first[cand]), "second": sec, "second_by_opponent": opp,
+                     "first_lines": first[cand], "second_games": {o: list(v) for o, v in second[cand].items()},
+                     "second_weights": w})
     return rows

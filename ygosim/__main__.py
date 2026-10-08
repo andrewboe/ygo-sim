@@ -200,6 +200,14 @@ def cmd_screen(args):
                   f"{r['variant']}")
 
 
+def cmd_report(args):
+    from pathlib import Path
+
+    from .report import write
+
+    print(f"wrote {write(Path(args.out))}")
+
+
 def cmd_matrix(args):
     from .matrix import MATRIX, build
 
@@ -293,6 +301,10 @@ def main():
 
     sc = sub.add_parser("screen", help="funnel stage 1 summary: going-first and going-second scores")
     sc.set_defaults(func=cmd_screen)
+
+    rp = sub.add_parser("report", help="stage 1 report as a self-contained HTML page")
+    rp.add_argument("--out", default="reports/stage1.html")
+    rp.set_defaults(func=cmd_report)
 
     mx = sub.add_parser("matrix", help="Bo3 matchup matrix from simulated games (data/games/results.jsonl)")
     mx.add_argument("decks", nargs="+", help="runtime deck names, e.g. elfnote__tcg")
