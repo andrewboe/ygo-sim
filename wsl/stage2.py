@@ -51,8 +51,11 @@ def play(first: str, second: str, games: int, seed_offset: int, extra: list[str]
 
 
 def results() -> list[dict]:
+    """Logged games from the current pilot/engine version only (game.CONFIG)."""
+    from game import CONFIG
     path = f"{DATA}/games/results.jsonl"
-    return [json.loads(l) for l in open(path)] if os.path.exists(path) else []
+    rows = [json.loads(l) for l in open(path)] if os.path.exists(path) else []
+    return [r for r in rows if r.get("config") == CONFIG]
 
 
 def field_rate(cand: str, opps: dict[str, float]) -> tuple[float, float, int]:

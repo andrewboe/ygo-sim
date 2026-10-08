@@ -40,6 +40,9 @@ INFO_KEYS = ("num_options", "option_kinds_", "option_hash_", "option_card_", "op
 WIN = 100.0
 MAX_TURN_STEPS = 400   # decisions within one searched turn
 YESNO = (12, 13)       # MSG_SELECT_EFFECTYN, MSG_SELECT_YESNO
+# Pilot/engine version, logged with every result; stage2.py and review.py only use matching games.
+# v1 (unlogged): committed rollout transcripts. v2: each player plays its own learned policy.
+CONFIG = "v2-policy-commit"
 
 
 @dataclass
@@ -110,7 +113,7 @@ def respond(info, i, n, kinds, tags, id_to_code, last_turn_act) -> int:
     return int(passes[0]) if len(passes) else 0
 
 
-def search_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, rng) -> TurnRollout:
+def search_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, rng) -> tuple[dict, dict]:
     """Co-evolved search of one turn. The turn player's policy adapts toward its best rollout so far
     (NRPA); the responder's policy adapts toward each batch's worst rollout for the turn player, so
     the turn player can't win by exploiting a fixed responder rule (e.g. baiting out a negate)."""
@@ -125,14 +128,17 @@ def search_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, r
         adapt(weights, best, alpha)
         worst = min(batch, key=lambda r: r.score)
         adapt(resp_weights, TurnRollout(trace=worst.resp_trace), alpha)
-    # Play the line that is best against the responder's final policy, not one found against an
-    # earlier, more exploitable responder.
-    return max(batch, key=lambda r: r.score)
+    # Return both learned policies, not a rollout: the real game is then played decision by decision,
+    # each player by its own policy (play_turn). Committing a rollout's transcript would also commit
+    # the responder's sampled, possibly self-destructive actions from whichever rollout went best for
+    # the turn player (AUDIT.md item 1).
+    return weights, resp_weights
 
 
-def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, resp_weights=None
-               ) -> list[TurnRollout]:
-    """K rollouts: replay `history`, then `player` plays turn `turn` by softmax policy."""
+def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, resp_weights=None,
+               greedy=False) -> list[TurnRollout]:
+    """K rollouts: replay `history`, then `player` plays turn `turn` by softmax policy (greedy: each
+    player takes its policy's most likely choice, no exploration)."""
     _, info = envs.reset()
     info = {key: info[key].copy() for key in INFO_KEYS}
     out = [TurnRollout() for _ in range(k)]
@@ -152,7 +158,10 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
             elif int(info["to_play"][i]) == player:
                 hashes = info["option_hash_"][i][:n].tolist()
                 priors = np.array([PRIOR[int(x)] for x in kinds])
-                acts[i], _ = sample(hashes, priors, weights, rng)
+                if greedy:
+                    acts[i] = int(np.argmax(np.array([weights[h] for h in hashes]) + priors))
+                else:
+                    acts[i], _ = sample(hashes, priors, weights, rng)
                 out[i].trace.append((hashes, priors, int(acts[i])))
                 last_turn_act[i] = int(info["option_act_"][i][acts[i]])
             elif resp_weights is not None and int(info["msg"][i]) == CHAIN and \
@@ -162,7 +171,10 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
                 hashes = info["option_hash_"][i][:n].tolist()
                 pref = respond(info, i, n, kinds, tags, id_to_code, last_turn_act[i])
                 priors = np.where(np.arange(n) == pref, 1.0, 0.0)
-                acts[i], _ = sample(hashes, priors, resp_weights, rng)
+                if greedy:
+                    acts[i] = int(np.argmax(np.array([resp_weights[h] for h in hashes]) + priors))
+                else:
+                    acts[i], _ = sample(hashes, priors, resp_weights, rng)
                 out[i].resp_trace.append((hashes, priors, int(acts[i])))
             else:
                 acts[i] = respond(info, i, n, kinds, tags, id_to_code, last_turn_act[i])
@@ -217,7 +229,10 @@ def play_game(envs, k, game_seed, max_turns, gens, alpha, tags, id_to_code, name
                 f"P1 field {show(info['field_codes_'][0][1])}")
         if turn > max_turns:
             break
-        best = search_turn(envs, k, history, tp, turn, gens, alpha, tags, id_to_code, rng)
+        weights, resp_weights = search_turn(envs, k, history, tp, turn, gens, alpha, tags, id_to_code, rng)
+        # The real turn: both players play their learned policies greedily, decision by decision.
+        best = turn_batch(envs, k, history, tp, turn, weights, tags, id_to_code, rng, resp_weights,
+                          greedy=True)[0]
         history = best.actions
         if best.ended:
             if log:
@@ -273,7 +288,8 @@ def main():
             pos_log.write(json.dumps({"decks": [args.first, args.second], "game": g, "player": p,
                                       "features": f, "won": won}) + "\n")
         pos_log.flush()
-        result_log.write(json.dumps({"first": args.first, "second": args.second, "game": g, "seed": args.seed,
+        result_log.write(json.dumps({"config": CONFIG, "first": args.first, "second": args.second, "game": g,
+                                     "seed": args.seed,
                                      "winner": r["winner"], "turns": r["turns"], "by": r["by"],
                                      "eval": "fitted" if weights_tag else "default",
                                      "eval_positions": weights_tag["positions"] if weights_tag else 0,

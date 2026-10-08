@@ -145,10 +145,11 @@ def end_of_turn(lines, flags, info, turn, tp, n_actions, passive, nm, tags, db, 
                       "detail": f"passed {k} live window(s) holding {c}"})
 
 
-def sample_games(n: int) -> list[dict]:
-    """Stage 2 games: half involving finalists, plus upsets, fast wins and turn caps."""
+def sample_games(n: int, config: str | None) -> list[dict]:
+    """Stage 2 games of one pilot version (config None = v1, untagged): half involving finalists, plus
+    upsets, fast wins and turn caps."""
     results = [json.loads(l) for l in open(f"{DATA}/games/results.jsonl")]
-    games = [r for r in results if r["game"] >= 10_000 and r.get("history")]
+    games = [r for r in results if 10_000 <= r["game"] < 90_000 and r.get("history") and r.get("config") == config]
     fin = set(json.load(open(f"{DATA}/screen/stage2_finalists.json"))["finalists"])
     rng = random.Random(0)
     pick = lambda pool, k: rng.sample(pool, min(k, len(pool)))
@@ -167,9 +168,10 @@ def main():
     ap.add_argument("--sample", type=int, default=0)
     ap.add_argument("--game", nargs=3, metavar=("FIRST", "SECOND", "GAME"))
     ap.add_argument("--list", action="store_true", help="print the sample (one game per line) and exit")
+    ap.add_argument("--config", default=None, help="pilot version to sample (game.CONFIG); default: v1 (untagged)")
     args = ap.parse_args()
     if args.list:  # env pools can't be torn down safely: review_sample.sh runs one process per game
-        for r in sample_games(args.sample or 12):
+        for r in sample_games(args.sample or 12, args.config):
             print(r["first"], r["second"], r["game"])
         return
     if args.game:
@@ -177,7 +179,7 @@ def main():
         recs = [r for r in (json.loads(l) for l in open(f"{DATA}/games/results.jsonl"))
                 if r["first"] == f and r["second"] == s and r["game"] == int(g)][-1:]
     else:
-        recs = sample_games(args.sample or 12)
+        recs = sample_games(args.sample or 12, args.config)
     tags = all_tags()
     id_to_code = [0] + [int(l) for l in open(os.path.expanduser("~/ygo/run/code_list.txt")) if l.strip()]
     os.makedirs(OUT, exist_ok=True)
