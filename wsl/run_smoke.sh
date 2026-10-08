@@ -5,7 +5,7 @@ source ~/ygo/.venv/bin/activate
 W=/mnt/c/Users/andre/Desktop/ygo-sim/wsl
 python3 $W/setup_runtime.py || exit 1
 cd ~/ygo/run
-timeout ${TIMEOUT:-600} python3 -u $W/smoke_test.py "$@" 2>&1 | grep -vE '^(Gym has|Please upgrade|Users of this|See the migration)'
+nice -n 19 timeout ${TIMEOUT:-600} python3 -u $W/smoke_test.py "$@" 2>&1 | grep -vE '^(Gym has|Please upgrade|Users of this|See the migration)'
 status=${PIPESTATUS[0]}
 [ $status -eq 124 ] && echo "[smoke] TIMED OUT after ${TIMEOUT:-600}s"
 exit $status

@@ -8,6 +8,9 @@ W=/mnt/c/Users/andre/Desktop/ygo-sim/wsl
 decks=$1 games=${2:-20}; shift 2
 python3 $W/setup_runtime.py > /dev/null
 play() {
+  # Resumable: skip pairs that already have enough games logged.
+  have=$(grep -c "\"first\": \"$1\", \"second\": \"$2\"" /mnt/c/Users/andre/Desktop/ygo-sim/data/games/results.jsonl 2>/dev/null || echo 0)
+  if [ "$have" -ge "$games" ]; then echo "== $1 vs $2: $have games already, skipped"; return; fi
   echo "== $1 (first) vs $2 (second)"
   TIMEOUT=${TIMEOUT:-21600} bash $W/run_py.sh game.py "$1" "$2" --games "$games" "$@" | grep --line-buffered -E "first wins|Traceback|Error"
 }

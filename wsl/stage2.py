@@ -33,6 +33,10 @@ def field_opponents(min_weight: float) -> dict[str, float]:
 
 
 def play(first: str, second: str, games: int, seed_offset: int, extra: list[str]) -> None:
+    # Resumable: skip a batch whose games (same pairing, same game indices) are already logged.
+    done = {r["game"] for r in results() if r["first"] == first and r["second"] == second}
+    if all(g in done for g in range(seed_offset, seed_offset + games)):
+        return
     cmd = ["bash", f"{W}/run_py.sh", "game.py", first, second, "--games", str(games),
            "--first-game", str(seed_offset), *extra]
     subprocess.run(cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,

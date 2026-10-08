@@ -50,6 +50,7 @@ def main():
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--holdout-deck", help="validate only on decks with this name prefix (never trained on)")
+    ap.add_argument("--resume", action="store_true", help="continue from the last completed epoch")
     args = ap.parse_args()
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -75,8 +76,17 @@ def main():
     model = Pilot(args.dim, args.layers).to(device)
     print(f"{sum(p.numel() for p in model.parameters()) / 1e6:.1f}M parameters")
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
+    os.makedirs(CKPT, exist_ok=True)
+    resume_path = f"{CKPT}/pilot_imitation.resume.pt"
+    start = 0
+    if args.resume and os.path.exists(resume_path):
+        state = torch.load(resume_path, map_location=device)
+        model.load_state_dict(state["model"])
+        opt.load_state_dict(state["opt"])
+        start = state["epoch"] + 1
+        print(f"resumed after epoch {state['epoch']}")
     t0 = time.time()
-    for epoch in range(args.epochs):
+    for epoch in range(start, args.epochs):
         model.train()
         tot, cnt = 0.0, 0
         for cards, glob_, acts, nopt, action, value in batches(data, train, args.batch, device, True):
@@ -98,8 +108,9 @@ def main():
                 vloss += torch.nn.functional.mse_loss(v, value.float(), reduction="sum").item()
         print(f"epoch {epoch}: train loss {tot / cnt:.3f}, val accuracy {hits / len(val):.1%}, "
               f"val value MSE {vloss / len(val):.2f} [{time.time() - t0:.0f}s]", flush=True)
+        # Resume point every epoch (stop any time; --resume continues). Same split via --seed.
+        torch.save({"model": model.state_dict(), "opt": opt.state_dict(), "epoch": epoch}, resume_path)
 
-    os.makedirs(CKPT, exist_ok=True)
     path = f"{CKPT}/pilot_imitation.pt"
     torch.save({"model": model.state_dict(), "config": vars(args), "val_accuracy": hits / len(val),
                 "baseline": baseline, "examples": n}, path)

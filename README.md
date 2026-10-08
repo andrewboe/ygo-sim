@@ -24,6 +24,18 @@ Competitive results are match results, so matchups are scored as Bo3 matches, no
 
 The simulator estimates four game win rates per matchup: pre-side going first, pre-side going second, post-side going first, and post-side going second. The match win rate then follows exactly from those numbers, so Bo3 costs no more simulation than single games. The side plan (which cards come in and out per matchup) becomes part of what the optimizer searches.
 
+## Sharing the machine
+
+- **Priority:** simulations run at the lowest priority (`nice 19`), so your own apps get the CPU first.
+- **Pause:** `wsl bash wsl/pause_sims.sh` freezes every simulator and training process instantly, and
+  `wsl bash wsl/resume_sims.sh` continues them. RAM and GPU memory stay allocated, and a pause doesn't
+  survive a reboot.
+- **Stop and resume later:** these runs pick up where they stopped:
+  - `stage1.sh`, `matchups.sh` and `stage2.py` skip work whose results are already logged.
+  - `train_pilot.py --resume` continues from the last completed epoch.
+- **Stop everything now:** `wsl bash wsl/stop_sims.sh`.
+- **Sleep:** long runs launch through `wsl/awake.ps1`, which keeps Windows awake only while the job runs.
+
 ## Tournaments
 
 `ygosim tournament --matrix M.json` simulates YCS-style events over the current field:
