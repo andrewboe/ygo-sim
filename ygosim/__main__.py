@@ -135,9 +135,9 @@ def cmd_fit_eval(args):
 
     out = fit(args.l2)
     r = out["report"]
-    print(f"{r['positions']} positions from {r['games']} games")
-    print(f"held-out log loss {r['test_log_loss']:.3f} (base rate {r['test_log_loss_base_rate']:.3f}), "
-          f"accuracy {r['test_accuracy']:.0%}")
+    print(f"{r['positions']} positions from {r['games']} games, {r['matchups']} matchups")
+    print(f"held-out matchups: log loss {r['test_log_loss']:.3f} (designed weights {r['test_log_loss_designed']:.3f}, "
+          f"base rate {r['test_log_loss_base_rate']:.3f}), accuracy {r['test_accuracy']:.0%}")
     for k, v in sorted(out["weights"].items(), key=lambda kv: -abs(kv[1])):
         print(f"  {v:+.3f}  {k}")
     print(f"wrote {WEIGHTS}")

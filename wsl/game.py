@@ -40,6 +40,7 @@ INFO_KEYS = ("num_options", "option_kinds_", "option_hash_", "option_card_", "op
 WIN = 100.0
 MAX_TURN_STEPS = 400   # decisions within one searched turn
 YESNO = (12, 13)       # MSG_SELECT_EFFECTYN, MSG_SELECT_YESNO
+IDLE = 11              # MSG_SELECT_IDLECMD
 # Pilot/engine version, logged with every result; stage2.py and review.py only use matching games.
 # v1 (unlogged): committed rollout transcripts. v2: each player plays its own learned policy.
 CONFIG = "v2-policy-commit"
@@ -77,10 +78,35 @@ def features(info, i, p, tags) -> dict:
 
 
 def load_weights() -> dict:
+    """Fitted weights if they were fitted from games of this pilot version, else the designed ones."""
     import json
     if os.path.exists(WEIGHTS_FILE):
-        return json.load(open(WEIGHTS_FILE))["weights"]
+        fitted = json.load(open(WEIGHTS_FILE))
+        if fitted.get("config") == CONFIG:
+            return fitted["weights"]
     return DEFAULT_WEIGHTS
+
+
+# Card hints (as in MTG Forge, where each card script tells the AI how to use it): monster hand traps
+# are held, not set or normal summoned as bodies, unless nothing else is worth doing.
+HINT_PENALTY = -3.0
+_HAND_TRAP_MONSTERS = None
+
+
+def hint_priors(cards, acts, n, tags, id_to_code) -> np.ndarray:
+    global _HAND_TRAP_MONSTERS
+    if _HAND_TRAP_MONSTERS is None:
+        import sqlite3
+        db = sqlite3.connect(os.path.expanduser("~/ygo/run/cards.cdb"))
+        _HAND_TRAP_MONSTERS = {c for c, t in db.execute("select id, type from datas")
+                               if t & 0x1 and tags.get(c, {}).get("hand", 0) > 0}
+    out = np.zeros(n)
+    for o in range(n):
+        cid = int(cards[o])
+        code = id_to_code[cid] if 0 < cid < len(id_to_code) else 0
+        if code in _HAND_TRAP_MONSTERS and chr(int(acts[o])) in "ms":  # set / normal summon
+            out[o] = HINT_PENALTY
+    return out
 
 
 EVAL_WEIGHTS = load_weights()
@@ -158,6 +184,9 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
             elif int(info["to_play"][i]) == player:
                 hashes = info["option_hash_"][i][:n].tolist()
                 priors = np.array([PRIOR[int(x)] for x in kinds])
+                if int(info["msg"][i]) == IDLE:
+                    priors = priors + hint_priors(info["option_card_"][i][:n], info["option_act_"][i][:n], n,
+                                                  tags, id_to_code)
                 if greedy:
                     acts[i] = int(np.argmax(np.array([weights[h] for h in hashes]) + priors))
                 else:
@@ -276,8 +305,9 @@ def main():
     os.makedirs(os.path.dirname(WEIGHTS_FILE), exist_ok=True)
     pos_log = open(os.path.join(os.path.dirname(WEIGHTS_FILE), "positions.jsonl"), "a")
     result_log = open(os.path.join(os.path.dirname(WEIGHTS_FILE), "results.jsonl"), "a")
-    weights_tag = json.load(open(WEIGHTS_FILE))["report"] if os.path.exists(WEIGHTS_FILE) else None
-    print(f"eval weights: {'fitted' if os.path.exists(WEIGHTS_FILE) else 'hand-picked defaults'}", flush=True)
+    fitted = EVAL_WEIGHTS is not DEFAULT_WEIGHTS
+    weights_tag = json.load(open(WEIGHTS_FILE))["report"] if fitted else None
+    print(f"eval weights: {'fitted' if fitted else 'designed defaults'}", flush=True)
     results, t0 = [], time.time()
     for g in range(args.first_game, args.first_game + args.games):
         r = play_game(envs, args.rollouts, g, args.max_turns, args.generations, args.alpha, tags, id_to_code,
@@ -285,7 +315,7 @@ def main():
         results.append(r)
         for p, f in r.pop("positions"):  # label each turn-end position with that player's result
             won = 0.5 if r["winner"] == -1 else float(r["winner"] == p)
-            pos_log.write(json.dumps({"decks": [args.first, args.second], "game": g, "player": p,
+            pos_log.write(json.dumps({"config": CONFIG, "decks": [args.first, args.second], "game": g, "player": p,
                                       "features": f, "won": won}) + "\n")
         pos_log.flush()
         result_log.write(json.dumps({"config": CONFIG, "first": args.first, "second": args.second, "game": g,
