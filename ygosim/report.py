@@ -203,8 +203,9 @@ def render(d: dict) -> str:
     findings.append(f"{len(picks)} candidates from {len({r['deck'] for r in picks})} decks advance to stage 2.")
     incomplete = sorted({r["deck"] for r in rows if r["second"] is None})
     if incomplete:
-        findings.append(f"Going-second screen incomplete for {_e(', '.join(incomplete))}: the card engine stalls on "
-                        f"some of their fusion checks. These lists are shown but not ranked on that seat.")
+        findings.append(f"Incomplete: {_e(', '.join(incomplete))}. The card engine stalls (Lunalight's fusion "
+                        f"checks) or crashes (Solfachord) on these decks; they're shown but not ranked until "
+                        f"the engine is fixed and they're re-run.")
 
     legend = "".join(f'<span class=key><i style="background:{colors[k]}"></i>{_e(k)}</span>' for k in decks)
 
