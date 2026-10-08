@@ -21,7 +21,8 @@ WEIGHTS = DATA_DIR / "games" / "eval_weights.json"
 
 
 # Designed weights (wsl/game.py DEFAULT_WEIGHTS) and the pilot version positions must come from.
-PRIOR = {"lp_diff_k": 1.0, "own_tagged": 1.0, "opp_tagged": -1.0, "own_hand": 0.3, "own_hand_traps": 1.0}
+PRIOR = {"lp_diff_k": 1.0, "own_tagged": 1.0, "opp_tagged": -1.0, "own_hand": 0.3, "opp_hand": -0.3,
+         "own_hand_traps": 1.0}
 CONFIG = "v2-policy-commit"
 HAND_TRAP_MARGIN = 0.5  # held hand trap (own_hand + own_hand_traps) >= card on field (own_field) + margin
 

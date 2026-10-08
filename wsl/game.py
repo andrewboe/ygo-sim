@@ -60,7 +60,7 @@ class TurnRollout:
 FEATURES = ("bias", "lp_diff_k", "own_tagged", "opp_tagged", "own_field", "opp_field",
             "own_hand", "opp_hand", "own_hand_traps", "went_first")
 # Hand-picked starting weights (THEORY §5.1); replaced by eval_weights.json once fitted from outcomes.
-DEFAULT_WEIGHTS = {"lp_diff_k": 1.0, "own_tagged": 1.0, "opp_tagged": -1.0, "own_hand": 0.3,
+DEFAULT_WEIGHTS = {"lp_diff_k": 1.0, "own_tagged": 1.0, "opp_tagged": -1.0, "own_hand": 0.3, "opp_hand": -0.3,
                    "own_hand_traps": 1.0}
 WEIGHTS_FILE = "/mnt/c/Users/andre/Desktop/ygo-sim/data/games/eval_weights.json"
 
