@@ -65,6 +65,14 @@ def collect() -> dict:
                      "share": v.get("share_of_deck"), "lists": v.get("lists"),
                      "signature": v.get("signature", [])})
 
+    # A seat counts only when every opponent got the full set of games (stalled runs leave partial ones).
+    all_opps = {o for r in rows for o in r["opponents"]}
+    n_full = max((v["n"] for r in rows for v in r["opponents"].values()), default=0)
+    for r in rows:
+        if r["second"] is not None and (set(r["opponents"]) != all_opps
+                                        or any(v["n"] < 0.75 * n_full for v in r["opponents"].values())):
+            r["second"], r["second_se"], r["second_partial"] = None, None, True
+
     by_cand = {r["candidate"]: r for r in rows}
     for r in rows:  # what each package changed, relative to its base list
         if not r["package"]:
@@ -193,6 +201,10 @@ def render(d: dict) -> str:
         findings.append(f"{PACKAGES[p]}: going second {s['d_second']:+.2f} on average "
                         f"({s['better_second']} of {s['n']} lists improved), going first {s['d_first']:+.2f}.")
     findings.append(f"{len(picks)} candidates from {len({r['deck'] for r in picks})} decks advance to stage 2.")
+    incomplete = sorted({r["deck"] for r in rows if r["second"] is None})
+    if incomplete:
+        findings.append(f"Going-second screen incomplete for {_e(', '.join(incomplete))}: the card engine stalls on "
+                        f"some of their fusion checks. These lists are shown but not ranked on that seat.")
 
     legend = "".join(f'<span class=key><i style="background:{colors[k]}"></i>{_e(k)}</span>' for k in decks)
 

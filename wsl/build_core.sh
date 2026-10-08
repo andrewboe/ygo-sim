@@ -5,7 +5,10 @@ set -e
 source ~/ygo/.venv/bin/activate
 pip install -q meson ninja
 cd ~/ygo/edopro-core
-git pull -q --ff-only && git submodule update --init -q
+# NO_PULL=1 rebuilds the checked-out core (keeps engine behavior fixed during a run).
+[ -z "$NO_PULL" ] && git checkout -q -- . && git pull -q --ff-only
+git submodule update --init -q
+python3 /mnt/c/Users/andre/Desktop/ygo-sim/wsl/patch_core.py
 rm -rf build
 meson setup build --buildtype=debugoptimized -Ddefault_library=static -Db_staticpic=true > /dev/null
 ninja -C build | tail -3
