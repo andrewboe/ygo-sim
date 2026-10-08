@@ -10,7 +10,7 @@ cand__blitzclique__swordsoul-dogmatika:dark-magician-chaos-ritual__tcg
 cand__branded__springans-dogmatika__backrow:sky-striker__tcg"
 for m in $MATCHUPS; do
   f=${m%%:*}; s=${m##*:}
-XX
+  TIMEOUT=1800 bash $W/run_py.sh game.py "$f" "$s" --games 2 --first-game "${FIRST:-90000}" | grep -E '^game|Error|Traceback'
   for g in "${FIRST:-90000}" "$(( ${FIRST:-90000} + 1 ))"; do
     timeout 300 python3 $W/review.py --game "$f" "$s" $g 2>&1 | grep -E 'flags$|Error|Traceback'
   done
