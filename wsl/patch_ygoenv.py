@@ -62,7 +62,18 @@ PATCHES = [
      "      fmt::println(stderr, \"[ygosim] MSG_RETRY; last agent decision: msg {} options [{}]; \"\n"
      "                   \"last response sent: {}\", ygosim_last_msg_, ygosim_last_options_, ygosim_last_resp_);\n"
      "      std::fflush(stderr);\n"
-     "      throw std::runtime_error(\"Retry\");"),
+     "      // The core rejected a response it offered (e.g. the CPU watchdog cut a material check\n"
+     "      // short mid-selection): end this duel as a draw instead of killing the process.\n"
+     "      _duel_end(2, 0);\n"
+     "      dp_ = fdl_;\n"
+     "      return;"),
+    ("edopro/edopro.h",
+     "      if (play_mode_ == kSelfPlay) {\n"
+     "        // to_play_ is the previous player\n",
+     "      if (winner_ > 1) {\n"
+     "        reward = 0;  // ygosim: aborted duel (MSG_RETRY), a draw\n"
+     "      } else if (play_mode_ == kSelfPlay) {\n"
+     "        // to_play_ is the previous player\n"),
     # Card/tribute responses: the type-3 bitset branch packs indices into one uint8, silently
     # dropping any index >= 8. Always use type 2 (u8 index list), valid below 256 cards.
     ("edopro/edopro.h", "  int GetSuitableReturn(uint32_t maxseq, uint32_t size) {\n",

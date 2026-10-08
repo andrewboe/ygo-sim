@@ -47,22 +47,33 @@ def read_ydk(path: str) -> tuple[Counter, Counter]:
 class Belief:
     def __init__(self, known: dict[int, str] | None = None):
         """known: player -> runtime deck name whose list that player's opponent knows (games 2-3)."""
+        db = sqlite3.connect(f"{RUN}/cards.cdb")
+        self.alias = {i: a for i, a in db.execute("select id, alias from datas") if a}
         field = json.load(open(FIELD))
         slug = lambda s: re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
         self.archetypes = []  # (name, weight, main Counter, extra Counter)
         for e in field["entries"]:
             path = f"{RUN}/decks/{slug(e['deck'])}__tcg.ydk"
             if e["source"] == "tcg" and os.path.exists(path):
-                self.archetypes.append((e["deck"], e["weight"], *read_ydk(path)))
+                self.archetypes.append((e["deck"], e["weight"], *map(self._canonical, read_ydk(path))))
         self.prior = np.array([a[1] for a in self.archetypes])
         self.prior /= self.prior.sum()
-        self.known = {p: read_ydk(f"{RUN}/decks/{d}.ydk") for p, d in (known or {}).items()}
         db = sqlite3.connect(f"{RUN}/cards.cdb")
         self.types = dict(db.execute("select id, type from datas"))
         self.alias = {i: a for i, a in db.execute("select id, alias from datas") if a}
+        self.known = {p: tuple(map(self._canonical, read_ydk(f"{RUN}/decks/{d}.ydk")))
+                      for p, d in (known or {}).items()}
 
     def base(self, code: int) -> int:
         return self.alias.get(code, code)
+
+    def _canonical(self, cards: Counter) -> Counter:
+        """Alt-art passcodes -> base codes: an alt art has no script of its own (it lives under the
+        base code), so re-dealing a card to an alt-art code would leave it without effects."""
+        out = Counter()
+        for c, n in cards.items():
+            out[self.base(c)] += n
+        return out
 
     def posterior(self, shown: list[int]) -> np.ndarray:
         like = np.ones(len(self.archetypes))

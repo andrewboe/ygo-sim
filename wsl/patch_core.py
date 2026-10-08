@@ -12,7 +12,7 @@ import subprocess
 import sys
 
 ROOT = os.path.expanduser("~/ygo/edopro-core")
-STEP_LIMIT_S = 0.1  # CPU seconds; normal process calls take milliseconds
+STEP_LIMIT_S = 1.0  # CPU seconds; normal calls take milliseconds, legit Branded Fusion checks exceeded 0.1
 
 PATCHES = [
     ("interpreter.cpp", '#include "scriptlib.h"\n',
@@ -68,8 +68,11 @@ PATCHES = [
      "\t\t\tpcard->remove_effect(rm->first, rm->second);\n"
      "\t}\n"
      "\tpcard->recreate(code);\n"
+     "\t// Alt-art printings have no script of their own: effects come from the base card (alias).\n"
+     "\tuint32_t al = pcard->data.alias;\n"
+     "\tuint32_t script = (al && (al > code ? al - code : code - al) < 20) ? al : code;\n"
      "\tif(!(pcard->data.type & TYPE_NORMAL)) {\n"
-     "\t\tpcard->replace_effect(code, 0, 0, true);\n"
+     "\t\tpcard->replace_effect(script, 0, 0, true);\n"
      "\t\tpcard->set_status(STATUS_EFFECT_REPLACED, FALSE);\n"
      "\t}\n"),
     ("ocgapi.h", "OCGAPI int OCG_DuelProcess(OCG_Duel ocg_duel);\n",
