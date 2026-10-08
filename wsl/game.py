@@ -57,6 +57,7 @@ class TurnRollout:
     unseen_at: int | None = None                  # greedy play stopped here: a choice search never saw
     window_at: int | None = None                  # greedy play stopped here: a hand-trap timing window
     window_options: list = field(default_factory=list)
+    window_cards: list = field(default_factory=list)  # passcode per window option (0 = pass)
 
 
 FEATURES = ("bias", "lp_diff_k", "own_tagged", "opp_tagged", "own_field", "opp_field",
@@ -237,6 +238,8 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
                     (live := live_interruptions(info, i, n, kinds, tags, id_to_code)):
                 out[i].window_at = len(out[i].actions)
                 out[i].window_options = [int(np.flatnonzero(kinds == KIND_PASS)[0])] + live
+                cid = lambda o: int(info["option_card_"][i][o])
+                out[i].window_cards = [0] + [id_to_code[cid(o)] if 0 < cid(o) < len(id_to_code) else 0 for o in live]
                 active[i] = False
                 continue
             elif resp_weights is not None and int(info["msg"][i]) == CHAIN and \
@@ -278,7 +281,9 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
 
 
 MAX_REPLANS = 4
-MAX_WINDOWS = 6      # hand-trap timing comparisons per real turn
+MAX_WINDOWS = 10     # hand-trap timing comparisons per real turn
+WINDOW_LOG = []      # every timing comparison of the real game (inspection; play_game --verbose prints them)
+REPLAN_LOG = []      # every re-plan of the real game
 WINDOW_OPTIONS = 3   # pass + the best tagged interruptions
 
 
@@ -297,15 +302,19 @@ def live_interruptions(info, i, n, kinds, tags, id_to_code) -> list[int]:
 def choose_window(envs, k, prefix, options, player, turn, weights, resp_weights, tags, id_to_code, rng) -> int:
     """Hand-trap timing for the non-turn player: play the rest of the turn out after each option
     (k envs split across options; both sides by their learned policies, with exploration) and take
-    the option that leaves the turn player worst off. Pass is options[0] and wins ties."""
+    the option after which the turn player's best continuation is worst (minimax: the turn player
+    re-optimizes around the interruption; means mostly measured exploration noise). Pass is
+    options[0] and wins ties."""
     first = [options[i % len(options)] for i in range(k)]
     batch = turn_batch(envs, k, prefix, player, turn, weights, tags, id_to_code, rng, resp_weights,
                        first_actions=first)
     totals = defaultdict(list)
     for i, r in enumerate(batch):
         totals[first[i]].append(r.score)
-    mean = {o: float(np.mean(v)) for o, v in totals.items()}
-    return min(options, key=lambda o: (mean.get(o, float("inf")), o != options[0]))
+    mean = {o: float(np.max(v)) for o, v in totals.items()}  # the turn player's best response
+    choice = min(options, key=lambda o: (mean.get(o, float("inf")), o != options[0]))
+    WINDOW_LOG.append({"turn": turn, "len": len(prefix), "options": options, "mean": mean, "choice": choice})
+    return choice
 
 
 def play_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, rng) -> TurnRollout:
@@ -319,8 +328,11 @@ def play_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, rng
     while True:
         r = turn_batch(envs, k, prefix, player, turn, weights, tags, id_to_code, rng, resp_weights, greedy=True,
                        stop_unseen=replans < MAX_REPLANS, stop_windows=windows < MAX_WINDOWS)[0]
+        if r.window_at is None and r.unseen_at is None and windows >= MAX_WINDOWS:
+            REPLAN_LOG.append({"turn": turn, "window_budget_exhausted": True})
         if r.unseen_at is not None:  # a choice the search never visited: re-plan from here
             replans += 1
+            REPLAN_LOG.append({"turn": turn, "len": len(r.actions)})
             w2, r2 = search_turn(envs, k, r.actions, player, turn, max(3, gens // 2), alpha, tags, id_to_code, rng)
             weights.update(w2)
             resp_weights.update(r2)
@@ -329,6 +341,7 @@ def play_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, rng
             windows += 1
             prefix = r.actions + [choose_window(envs, k, r.actions, r.window_options, player, turn, weights,
                                                 resp_weights, tags, id_to_code, rng)]
+            WINDOW_LOG[-1]["cards"] = r.window_cards
         else:
             return r
 
