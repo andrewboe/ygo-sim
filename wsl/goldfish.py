@@ -34,6 +34,7 @@ MAX_OPTIONS = 24
 KIND_ACTION, KIND_PASS, KIND_END, KIND_PHASE = 0, 1, 2, 3
 PRIOR = {KIND_ACTION: 0.0, KIND_PASS: -1.0, KIND_END: -3.0, KIND_PHASE: -3.0}  # logit offsets
 MAX_STEPS = 300  # per rollout; turn-1 combos are far shorter
+REPLAY = 1000  # action + REPLAY: replaying a known line, env skips info for the next state
 INFO_KEYS = ("num_options", "option_kinds_", "option_hash_", "option_card_", "option_act_", "to_play", "turn", "msg",
              "board_", "field_codes_", "hand_codes_")
 
@@ -180,7 +181,9 @@ def rollout_batch(envs, k, weights, tags, rng, prefix=(), p2_plan=(), probe: Pro
                 out[i].actions.append(int(acts[i]))
                 continue
             if t < len(prefix):
-                acts[i] = prefix[t]
+                # Replay flag (+1000) on every forced move but the last: the env skips building info
+                # nobody reads; the state before the first real decision is built in full.
+                acts[i] = prefix[t] + (REPLAY if t < len(prefix) - 1 else 0)
             elif int(info["to_play"][i]) == 1:
                 passes = np.flatnonzero(kinds == KIND_PASS)
                 acting = [(o, int(info["option_card_"][i][o]), int(kinds[o]))
@@ -213,11 +216,12 @@ def rollout_batch(envs, k, weights, tags, rng, prefix=(), p2_plan=(), probe: Pro
                 else:
                     acts[i], _ = sample(hashes, priors, weights, rng)
                 out[i].trace.append((hashes, priors, int(acts[i])))
+            chosen = int(acts[i]) % REPLAY
             if int(info["to_play"][i]) == 0:
                 p1_decisions[i] += 1
-                if info["option_card_"][i][acts[i]]:
-                    last_p1_card[i] = int(info["option_card_"][i][acts[i]])
-            out[i].actions.append(int(acts[i]))
+                if info["option_card_"][i][chosen]:
+                    last_p1_card[i] = int(info["option_card_"][i][chosen])
+            out[i].actions.append(chosen)
         _, _, term, trunc, step = envs.step(acts)
         for j, i in enumerate(step["env_id"]):
             if not active[i]:

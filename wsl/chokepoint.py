@@ -54,8 +54,9 @@ def state_after(envs, k: int, opening: int, actions: list[int]) -> dict:
     """Replay `actions` in every env and return env 0's info at the next decision."""
     set_opening(opening)
     _, info = envs.reset()
-    for a in actions:
-        _, _, _, _, info = envs.step(np.full(k, a, dtype=np.int32))
+    for t, a in enumerate(actions):  # replay flag on all but the last move (goldfish.REPLAY)
+        flag = 1000 if t < len(actions) - 1 else 0
+        _, _, _, _, info = envs.step(np.full(k, a + flag, dtype=np.int32))
     return {key: info[key][0] for key in INFO_KEYS}
 
 

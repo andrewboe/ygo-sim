@@ -2,6 +2,7 @@
   // observations (cards/actions/history), which dominate step cost and aren't needed for search.
   bool lite_ = false;
   int64_t duel_seed_ = -1;
+  bool ygosim_replay_ = false;  // set per step by the replay flag (action + 1000)
   bool shuffle2_ = true;  // false: player 1's deck is stacked in file order (last main-deck line on top)
   int ygosim_idle_spins_ = 0;
 
@@ -60,8 +61,10 @@
     state["info:turn_player"_] = static_cast<int>(tp_);
     state["info:lp_"_][0] = lp_[0];
     state["info:lp_"_][1] = lp_[1];
-    if (!duel_started_) {
-      return;  // duel ended and was destroyed (_duel_end); nothing left to query
+    if (!duel_started_ || ygosim_replay_) {
+      // Duel destroyed (_duel_end), or a replay step whose info nobody reads: skip the board,
+      // hand and per-option queries (the bulk of per-step cost during replays).
+      return;
     }
     static const uint32_t locs[7] = {LOCATION_MZONE, LOCATION_SZONE, LOCATION_HAND, LOCATION_GRAVE,
                                      LOCATION_REMOVED, LOCATION_DECK, LOCATION_EXTRA};

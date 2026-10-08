@@ -31,8 +31,8 @@ import numpy as np
 sys.path.insert(0, os.path.expanduser("~/ygo/ygo-agent/ygoenv"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ygoenv  # noqa: E402
-from goldfish import (CHAIN, KIND_END, KIND_PASS, KIND_PHASE, MAX_OPTIONS, PRIOR, adapt, load,  # noqa: E402
-                      sample, set_opening)
+from goldfish import (CHAIN, KIND_END, KIND_PASS, KIND_PHASE, MAX_OPTIONS, PRIOR, REPLAY, adapt,  # noqa: E402
+                      load, sample, set_opening)
 from card_tags import all_tags  # noqa: E402
 
 INFO_KEYS = ("num_options", "option_kinds_", "option_hash_", "option_card_", "option_act_", "to_play",
@@ -147,8 +147,8 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
             n = int(info["num_options"][i])
             kinds = info["option_kinds_"][i][:n]
             t = len(out[i].actions)
-            if t < len(history):
-                acts[i] = history[t]
+            if t < len(history):  # replay flag on all but the last forced move (see goldfish.REPLAY)
+                acts[i] = history[t] + (REPLAY if t < len(history) - 1 else 0)
             elif int(info["to_play"][i]) == player:
                 hashes = info["option_hash_"][i][:n].tolist()
                 priors = np.array([PRIOR[int(x)] for x in kinds])
@@ -167,7 +167,7 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
             else:
                 acts[i] = respond(info, i, n, kinds, tags, id_to_code, last_turn_act[i])
             last_actor[i] = int(info["to_play"][i])
-            out[i].actions.append(int(acts[i]))
+            out[i].actions.append(int(acts[i]) % REPLAY)
         _, rew, term, trunc, step = envs.step(acts)
         for j, i in enumerate(step["env_id"]):
             if not active[i]:
@@ -193,8 +193,9 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
 def current_state(envs, k, history):
     """Replay history; return (turn, turn player, decision player) at the next decision."""
     _, info = envs.reset()
-    for a in history:
-        _, _, _, _, info = envs.step(np.full(k, a, dtype=np.int32))
+    for t, a in enumerate(history):
+        flag = REPLAY if t < len(history) - 1 else 0
+        _, _, _, _, info = envs.step(np.full(k, a + flag, dtype=np.int32))
     return int(info["turn"][0]), int(info["turn_player"][0]), info
 
 

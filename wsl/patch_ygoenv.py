@@ -19,8 +19,12 @@ PATCHES = [
     ("edopro/edopro.h", "OCG_DuelQueryLocation(pduel, &length, info)",
      "OCG_DuelQueryLocation(pduel, &length, &info)"),
     # Diagnostics: name the message that left callback_ empty instead of dying in std::function.
+    # Replay flag: action + 1000 = "replaying a known line, skip building info for the next state".
     ("edopro/edopro.h", "    int idx = action[\"action\"_];\n    callback_(idx);",
-     "    int idx = action[\"action\"_];\n    check_callback();\n    callback_(idx);"),
+     "    int idx = action[\"action\"_];\n"
+     "    ygosim_replay_ = idx >= 1000;\n"
+     "    if (ygosim_replay_) {\n      idx -= 1000;\n    }\n"
+     "    check_callback();\n    callback_(idx);"),
     ("edopro/edopro.h", "          if (options_.size() == 1) {\n            callback_(0);",
      "          if (options_.size() == 1) {\n            check_callback();\n            callback_(0);"),
     ("edopro/edopro.h", "  int GetSuitableReturn(uint32_t maxseq, uint32_t size) {",
@@ -248,6 +252,7 @@ PATCHES = [
     ("edopro/edopro.h",
      "  void Reset() override {\n",
      "  void Reset() override {\n"
+     "    ygosim_replay_ = false;\n"
      "    if (duel_started_) {  // ygosim: resetting mid-duel leaked the old duel (and its Lua state)\n"
      "      std::unique_lock<std::shared_timed_mutex> end_lock(duel_mtx);\n"
      "      YGO_EndDuel(pduel_);\n"
