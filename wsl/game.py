@@ -71,7 +71,8 @@ FEATURES = ("bias", "lp_diff_k", "own_tagged", "opp_tagged", "own_field", "opp_f
 # blockers; without it, Evenly Matched banishing two attackers scored as worthless), plus tagged
 # interruption value on top.
 DEFAULT_WEIGHTS = {"lp_diff_k": 1.0, "own_tagged": 1.0, "opp_tagged": -1.0, "own_hand": 0.3, "opp_hand": -0.3,
-                   "own_field": 0.3, "opp_field": -0.3, "own_hand_traps": 1.0}
+                   "own_field": 0.3, "opp_field": -0.3, "own_hand_traps": 1.0,
+                   "own_protected": 0.4, "own_threat": 0.4}
 WEIGHTS_FILE = "/mnt/c/Users/andre/Desktop/ygo-sim/data/games/eval_weights.json"
 
 
@@ -93,12 +94,48 @@ def features(info, i, p, tags) -> dict:
     # Hand traps that need an empty field (Mulcharmys, Evenly Matched / Impermanence from the hand) are
     # dead while you control a card: summoning Blazing Cartesia while holding Evenly Matched wasted it.
     own_cards = sum(1 for c in info["field_codes_"][i][p] if c)
+    prot, threat = board_traits()
+    up = {abs(int(c)) for c in info["field_codes_"][i][p] if c and c > 0}  # face-up, once per name
+    f["own_protected"] = float(len(up & prot))
+    f["own_threat"] = float(len(up & threat))
     f["own_hand_traps"] = sum(tags.get(c, {}).get("hand", 0.0) for c in {int(c) for c in info["hand_codes_"][i][p] if c}
                               if not (own_cards and c in needs_empty_field()))
     return f
 
 
 _NEEDS_EMPTY = None
+_BOARD_TRAITS = None
+
+
+def board_traits() -> tuple[set, set]:
+    """(protected, threat) passcodes by card text (docs/gap_analysis.md #6).
+    protected: unaffected by / can't be targeted or destroyed by the opponent's effects (survives breakers).
+    threat: a non-quick effect that removes the opponent's cards (pressure for your next turn)."""
+    global _BOARD_TRAITS
+    if _BOARD_TRAITS is None:
+        import re
+        import sqlite3
+        from card_tags import EFFECT_SPLIT, QUICK
+        protect = re.compile(r"unaffected by (?:your )?opponent'?s? (?:activated )?(?:card )?effects|"
+                             r"cannot be (?:targeted|destroyed)[^.]*(?:your )?opponent'?s? card effects", re.I)
+        removal = re.compile(r"(?:banish|destroy|return|shuffle)[^.]{0,80}(?:your opponent controls|on your "
+                             r"opponent's field|your opponent's (?:monsters?|cards?))", re.I)
+        db = sqlite3.connect(os.path.expanduser("~/ygo/run/cards.cdb"))
+        prot, threat = set(), set()
+        for c, d in db.execute("select id, desc from texts"):
+            if not d:
+                continue
+            effects = EFFECT_SPLIT.split(d)
+            # Protection granted to another monster (I:P Masquerena: "a Link Monster ... using this card as
+            # material cannot be destroyed") isn't this card's; "cannot be destroyed" isn't removal.
+            if any(protect.search(e) and "as material" not in e for e in effects):
+                prot.add(c)
+            if any(removal.search(e) and not QUICK.search(e) and "cannot be" not in e for e in effects):
+                threat.add(c)
+        _BOARD_TRAITS = (prot, threat)
+    return _BOARD_TRAITS
+
+
 
 
 def needs_empty_field() -> set:
