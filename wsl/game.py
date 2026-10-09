@@ -468,8 +468,8 @@ def main():
             pos_log.write(json.dumps({"config": CONFIG, "decks": [args.first, args.second], "game": g, "player": p,
                                       "features": f, "won": won}) + "\n")
         pos_log.flush()
-        result_log.write(json.dumps({"config": CONFIG, "first": args.first, "second": args.second, "game": g,
-                                     "seed": args.seed,
+        result_log.write(json.dumps({"config": CONFIG, "gens": args.generations, "rollouts": args.rollouts,
+                                     "first": args.first, "second": args.second, "game": g, "seed": args.seed,
                                      "winner": r["winner"], "turns": r["turns"], "by": r["by"],
                                      "eval": "fitted" if weights_tag else "default",
                                      "eval_positions": weights_tag["positions"] if weights_tag else 0,
