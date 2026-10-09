@@ -61,6 +61,7 @@ class TurnRollout:
     window_at: int | None = None                  # greedy play stopped here: a hand-trap timing window
     window_options: list = field(default_factory=list)
     window_cards: list = field(default_factory=list)  # passcode per window option (0 = pass)
+    off_plan: bool = False                         # greedy play left the search's best line
 
 
 FEATURES = ("bias", "lp_diff_k", "own_tagged", "opp_tagged", "own_field", "opp_field",
@@ -183,7 +184,7 @@ def respond(info, i, n, kinds, tags, id_to_code, last_turn_act) -> int:
     return int(passes[0]) if len(passes) else 0
 
 
-def search_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, rng) -> tuple[dict, dict]:
+def search_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, rng) -> tuple[dict, dict, tuple]:
     """Co-evolved search of one turn. The turn player's policy adapts toward its best rollout so far
     (NRPA); the responder's policy adapts toward each batch's worst rollout for the turn player, so
     the turn player can't win by exploiting a fixed responder rule (e.g. baiting out a negate)."""
@@ -199,21 +200,23 @@ def search_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, r
         adapt(weights, best, alpha)
         worst = min(batch, key=lambda r: r.score)
         adapt(resp_weights, TurnRollout(trace=worst.resp_trace), alpha)
-    # Return both learned policies, not a rollout: the real game is then played decision by decision,
-    # each player by its own policy (play_turn). Committing a rollout's transcript would also commit
-    # the responder's sampled, possibly self-destructive actions from whichever rollout went best for
-    # the turn player (AUDIT.md item 1).
-    return weights, resp_weights
+    # Return both learned policies and the turn player's moves in its best line (not the rollout's
+    # transcript: that would also commit the responder's sampled, possibly self-destructive actions,
+    # AUDIT.md item 1). The real turn follows those moves while they stay available (play_turn).
+    plan = tuple(h[c] for h, _, c in best.trace)
+    return weights, resp_weights, plan
 
 
 def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, resp_weights=None,
                greedy=False, stop_unseen=False, stop_windows=False, first_actions=None, belief=None,
-               decider=None, held_windows=frozenset()) -> list[TurnRollout]:
+               decider=None, held_windows=frozenset(), plan=()) -> list[TurnRollout]:
     """K rollouts: replay `history`, then `player` plays turn `turn` by softmax policy (greedy: each
     player takes its policy's most likely choice, no exploration; stop_unseen: stop at the first
     turn-player choice between 2+ actions that the search never visited, for re-planning;
     stop_windows: stop where the non-turn player can use a tagged interruption or pass;
     first_actions[i]: env i's first move after `history`, for comparing choices at one decision;
+    plan: option hashes of the turn player's moves in the search's best line; greedy play follows them
+    in order while each is available, then falls back to the policy;
     belief: before `decider`'s first decision after `history`, each env re-deals what the decider
     can't see from the belief (belief.py), so search can't use hidden cards)."""
     _, info = envs.reset()
@@ -223,6 +226,8 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
     last_turn_act = np.zeros(k, dtype=int)
     last_actor = np.zeros(k, dtype=int)  # env reward is relative to whoever made the last move
     redealt = np.zeros(k, dtype=bool)
+    plan_pos = np.zeros(k, dtype=int)
+    on_plan = np.full(k, bool(plan))
     for _ in range(len(history) + MAX_TURN_STEPS):
         if not active.any():
             break
@@ -250,7 +255,12 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
                     out[i].unseen_at = len(out[i].actions)
                     active[i] = False
                     continue
-                if greedy:
+                if on_plan[i] and plan_pos[i] < len(plan) and plan[plan_pos[i]] in hashes:
+                    acts[i] = hashes.index(plan[plan_pos[i]])  # the best line's own move
+                    plan_pos[i] += 1
+                elif greedy:
+                    on_plan[i] = False  # the real game left the best line: policy from here
+                    out[i].off_plan = bool(plan)
                     acts[i] = int(np.argmax(np.array([weights.get(h, 0.0) for h in hashes]) + priors))
                 else:
                     acts[i], _ = sample(hashes, priors, weights, rng)
@@ -309,6 +319,7 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
 
 
 MAX_REPLANS = 4
+OPENING_BOOST = 3    # search budget multiplier for turns 1-2
 MAX_WINDOWS = 10     # hand-trap timing comparisons per real turn
 WINDOW_LOG = []      # every timing comparison of the real game (inspection; play_game --verbose prints them)
 REPLAN_LOG = []      # every re-plan of the real game
@@ -351,25 +362,30 @@ def play_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, rng
     every rollout), re-plan from that exact point with a smaller search and merge what it learns. At
     each window where the non-turn player could interrupt, it compares using each live interruption
     now against holding (choose_window), the hand-trap timing THEORY §2 is about."""
-    weights, resp_weights = search_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, rng)
+    weights, resp_weights, plan = search_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, rng)
     prefix, replans, windows, held = list(history), 0, 0, set()
+    done_moves = 0  # turn-player moves of the plan already played (plans restart after a re-plan)
     while True:
         if len(prefix) - len(history) > MAX_TURN_STEPS:  # runaway turn: finish it without more stops
             return turn_batch(envs, k, prefix, player, turn, weights, tags, id_to_code, rng, resp_weights,
                               greedy=True)[0]
         r = turn_batch(envs, k, prefix, player, turn, weights, tags, id_to_code, rng, resp_weights, greedy=True,
                        stop_unseen=replans < MAX_REPLANS, stop_windows=windows < MAX_WINDOWS,
-                       held_windows=frozenset(held))[0]
+                       held_windows=frozenset(held), plan=plan[done_moves:])[0]
         if r.window_at is None and r.unseen_at is None and windows >= MAX_WINDOWS:
             REPLAN_LOG.append({"turn": turn, "window_budget_exhausted": True})
         if r.unseen_at is not None:  # a choice the search never visited: re-plan from here
             replans += 1
             REPLAN_LOG.append({"turn": turn, "len": len(r.actions)})
-            w2, r2 = search_turn(envs, k, r.actions, player, turn, max(3, gens // 2), alpha, tags, id_to_code, rng)
+            w2, r2, plan = search_turn(envs, k, r.actions, player, turn, max(3, gens // 2), alpha, tags,
+                                       id_to_code, rng)
             weights.update(w2)
             resp_weights.update(r2)
-            prefix = r.actions
+            prefix, done_moves = r.actions, 0
         elif r.window_at is not None:  # the opponent can interrupt here: use now or hold?
+            done_moves += len(r.trace)  # the turn player's moves played before this stop
+            if r.off_plan:
+                plan = ()
             key = tuple(sorted(r.window_cards))
             windows += 1
             choice = choose_window(envs, k, r.actions, r.window_options, player, turn, weights, resp_weights,
@@ -417,7 +433,10 @@ def play_game(envs, k, game_seed, max_turns, gens, alpha, tags, id_to_code, name
                 f"P1 field {show(info['field_codes_'][0][1])}")
         if turn > max_turns:
             break
-        best = play_turn(envs, k, history, tp, turn, gens, alpha, tags, id_to_code, rng)
+        # Turns 1-2 (the going-first combo and the going-second break) are the long combo turns:
+        # Elfnote reached a real end board only at 3x search; 9x found the same board.
+        budget = gens * OPENING_BOOST if turn <= 2 else gens
+        best = play_turn(envs, k, history, tp, turn, budget, alpha, tags, id_to_code, rng)
         history = best.actions
         if best.ended:
             if log:
