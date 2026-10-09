@@ -52,8 +52,11 @@ def merge_db():
 
 # Opponent test decks for interruption studies (THEORY §2), dealt in file order (shuffle2=False).
 # Opening hand: the hand traps, plus PROBE_SPELL and the vanilla FILLER, which the opponent uses on its
-# turn to probe which of P1's interruptions are still live (THEORY §3).
-FILLER = "Mystical Elf"
+# turn to probe which of P1's interruptions are still live (THEORY §3): summon it, activate its effect,
+# activate the spell.
+# The filler has a harmless ignition effect so the probe also activates a monster effect: most
+# negates (Crystal Wing, omni-negates) respond only to effect activations, not to summons or spells.
+FILLER = "Card Trooper"
 PROBE_SPELL = "Upstart Goblin"
 HAND_TRAP_SETS = {
     "none": [],

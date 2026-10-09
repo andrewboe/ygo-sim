@@ -90,8 +90,27 @@ def features(info, i, p, tags) -> dict:
             best[abs(c)] = max(best.get(abs(c), 0.0), tags.get(abs(c), {}).get("set" if c < 0 else "field", 0.0))
         f[f"{name}_tagged"] = sum(best.values())
         f[f"{name}_hand"] = float(sum(1 for c in info["hand_codes_"][i][side] if c))
-    f["own_hand_traps"] = sum(tags.get(c, {}).get("hand", 0.0) for c in {int(c) for c in info["hand_codes_"][i][p] if c})
+    # Hand traps that need an empty field (Mulcharmys, Evenly Matched / Impermanence from the hand) are
+    # dead while you control a card: summoning Blazing Cartesia while holding Evenly Matched wasted it.
+    own_cards = sum(1 for c in info["field_codes_"][i][p] if c)
+    f["own_hand_traps"] = sum(tags.get(c, {}).get("hand", 0.0) for c in {int(c) for c in info["hand_codes_"][i][p] if c}
+                              if not (own_cards and c in needs_empty_field()))
     return f
+
+
+_NEEDS_EMPTY = None
+
+
+def needs_empty_field() -> set:
+    """Cards usable from the hand only while their controller controls no cards (by card text)."""
+    global _NEEDS_EMPTY
+    if _NEEDS_EMPTY is None:
+        import re
+        import sqlite3
+        db = sqlite3.connect(os.path.expanduser("~/ygo/run/cards.cdb"))
+        pat = re.compile(r"if you control no cards", re.I)
+        _NEEDS_EMPTY = {c for c, d in db.execute("select id, desc from texts") if d and pat.search(d)}
+    return _NEEDS_EMPTY
 
 
 def load_weights() -> dict:
@@ -145,8 +164,8 @@ def score_features(f: dict) -> float:
 
 
 # Board probe (THEORY §3, as in stage 1): at the end of the searcher's turn in a rollout, the opponent's
-# first two hand cards become Mystical Elf and Upstart Goblin (belief re-deal machinery); the opponent
-# normal summons the Elf and activates the Goblin, and every response the engine offers the searcher is
+# first two hand cards become Card Trooper and Upstart Goblin (belief re-deal machinery); the opponent
+# normal summons the Trooper, activates its effect (monster-effect negates) and activates the Goblin, and every response the engine offers the searcher is
 # a live interruption. Static tags can't see placement, conditions or effects already used (Elfnote
 # Lucina in the center zone can't swap; a once-per-turn effect spent on your own turn is gone).
 PROBE_EVAL = True
@@ -160,9 +179,9 @@ def probe_cards(id_to_code) -> tuple[int, int, int, int]:
         import sqlite3
         db = sqlite3.connect(os.path.expanduser("~/ygo/run/cards.cdb"))
         code = dict((n, c) for c, n in db.execute(
-            "select id, name from texts where name in ('Mystical Elf', 'Upstart Goblin')"))
+            "select id, name from texts where name in ('Card Trooper', 'Upstart Goblin')"))
         index = {c: i for i, c in enumerate(id_to_code) if c}
-        f, s = code["Mystical Elf"], code["Upstart Goblin"]
+        f, s = code["Card Trooper"], code["Upstart Goblin"]
         _PROBE = (index[f], index[s], f, s)
     return _PROBE
 
@@ -176,7 +195,8 @@ def probe_step(info, i, n, kinds, st, opp, probe) -> int:
     if int(info["to_play"][i]) == opp:
         if int(info["msg"][i]) == IDLE:
             st["armed"] = False
-            for key, act, card in (("summoned", ord("s"), probe[0]), ("activated", ord("v"), probe[1])):
+            for key, act, card in (("summoned", ord("s"), probe[0]), ("effected", ord("v"), probe[0]),
+                                   ("activated", ord("v"), probe[1])):
                 if not st[key]:
                     st[key] = True
                     hit = np.flatnonzero((acts_ == act) & (cards == card))
@@ -190,6 +210,18 @@ def probe_step(info, i, n, kinds, st, opp, probe) -> int:
     if int(info["msg"][i]) == CHAIN and st["armed"]:
         st["offered"].update(int(c) for o, c in enumerate(cards) if kinds[o] != KIND_PASS and c)
     return int(passes[0]) if len(passes) else 0
+
+
+def start_probe(probing, i, info, player, tags, id_to_code) -> None:
+    """Snapshot the searcher's position and stage the opponent's probe hand (applied by a re-deal)."""
+    opp = 1 - player
+    pr = probe_cards(id_to_code)
+    probing[i] = {"features": features(info, i, player, tags), "redeal": True,
+                  "board": np.array(info["field_codes_"][i][player]).copy(),
+                  "hand": np.array(info["hand_codes_"][i][player]).copy(),
+                  "summoned": False, "effected": False, "activated": False, "armed": False, "finished": False,
+                  "offered": set()}
+    stage_hidden(int(i), [opp, LOC_HAND, 0, pr[2], opp, LOC_HAND, 1, pr[3]])
 
 
 def live_value(board, hand, offered, tags, id_to_code) -> float:
@@ -273,12 +305,13 @@ def search_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, r
 
 def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, resp_weights=None,
                greedy=False, stop_unseen=False, stop_windows=False, first_actions=None, belief=None,
-               decider=None, held_windows=frozenset(), plan=()) -> list[TurnRollout]:
+               decider=None, held_windows=frozenset(), plan=(), probe_now=False) -> list[TurnRollout]:
     """K rollouts: replay `history`, then `player` plays turn `turn` by softmax policy (greedy: each
     player takes its policy's most likely choice, no exploration; stop_unseen: stop at the first
     turn-player choice between 2+ actions that the search never visited, for re-planning;
     stop_windows: stop where the non-turn player can use a tagged interruption or pass;
     first_actions[i]: env i's first move after `history`, for comparing choices at one decision;
+    probe_now: start the board probe right after `history` (measuring the board a history ends on);
     plan: option hashes of the turn player's moves in the search's best line; greedy play follows them
     in order while each is available, then falls back to the policy;
     belief: before `decider`'s first decision after `history`, each env re-deals what the decider
@@ -301,6 +334,8 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
             n = int(info["num_options"][i])
             kinds = info["option_kinds_"][i][:n]
             t = len(out[i].actions)
+            if probe_now and probing[i] is None and t >= len(history):
+                start_probe(probing, i, info, player, tags, id_to_code)
             if probing[i] is not None:  # evaluation probe: not part of the line, not recorded
                 if probing[i]["redeal"]:
                     acts[i], probing[i]["redeal"] = REDEAL, False
@@ -373,15 +408,15 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
                 continue
             for key in INFO_KEYS:
                 info[key][i] = step[key][j]
-            if len(out[i].actions) <= len(history):
-                continue
-            st = probing[i]
+            st = probing[i]  # (before the history check: probe moves aren't part of the line)
             if st is not None:
                 if term[j] or trunc[j] or st["finished"] or int(step["turn"][j]) > turn + 1:
                     active[i] = False
                     f = dict(st["features"])
                     f["own_tagged"] = live_value(st["board"], st["hand"], st["offered"], tags, id_to_code)
                     out[i].score = score_features(f)
+                continue
+            if len(out[i].actions) <= len(history):
                 continue
             if term[j] or trunc[j]:
                 active[i] = False
@@ -394,13 +429,7 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
             elif int(step["turn"][j]) > turn:
                 opp = 1 - player
                 if PROBE_EVAL and not greedy and int(info["board_"][i][opp][2]) >= 2:
-                    pr = probe_cards(id_to_code)
-                    probing[i] = {"features": features(info, i, player, tags), "redeal": True,
-                                  "board": np.array(info["field_codes_"][i][player]).copy(),
-                                  "hand": np.array(info["hand_codes_"][i][player]).copy(),
-                                  "summoned": False, "activated": False, "armed": False, "finished": False,
-                                  "offered": set()}
-                    stage_hidden(int(i), [opp, LOC_HAND, 0, pr[2], opp, LOC_HAND, 1, pr[3]])
+                    start_probe(probing, i, info, player, tags, id_to_code)
                 else:
                     active[i] = False
                     out[i].score = evaluate(info, i, player, tags, id_to_code)

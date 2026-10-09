@@ -85,7 +85,7 @@ def sample(hashes, priors, weights, rng) -> tuple[int, np.ndarray]:
 @dataclass
 class Probe:
     """Opponent's scripted turn 2 that reveals which of P1's interruptions are still live (THEORY §3):
-    normal summon the vanilla filler, then activate the probe spell, then end the turn. Every
+    normal summon the filler, activate its effect, then activate the probe spell, then end the turn. Every
     response the engine offers P1 right after those actions is a live interruption."""
     filler_id: int  # code-list ids
     spell_id: int
@@ -105,6 +105,7 @@ def probe_decision(info, i, n, kinds, state) -> int:
         if int(info["msg"][i]) == IDLE:
             state["armed"] = False
             for step_name, act, card in (("summoned", ord("s"), state["probe"].filler_id),
+                                         ("effected", ord("v"), state["probe"].filler_id),
                                          ("activated", ord("v"), state["probe"].spell_id)):
                 if not state[step_name]:
                     hit = np.flatnonzero((acts_ == act) & (cards == card))
@@ -238,7 +239,7 @@ def rollout_batch(envs, k, weights, tags, rng, prefix=(), p2_plan=(), probe: Pro
                     active[i] = False
                     out[i].score = score_board(out[i].board, out[i].hand, tags)
                 else:
-                    probing[i] = {"probe": probe, "summoned": False, "activated": False,
+                    probing[i] = {"probe": probe, "summoned": False, "effected": False, "activated": False,
                                   "armed": False, "finished": False, "offered": set()}
             elif probing[i] is not None and (ended or probing[i]["finished"] or step["turn"][j] >= 3):
                 active[i] = False
@@ -298,7 +299,7 @@ def make_probe(names: dict) -> Probe:
         by_name.setdefault(names.get(code), code)
     index = {c: i + 1 for i, c in enumerate(codes)}  # code-list ids are 1-based lines
     id_to_code = [0] + codes
-    return Probe(index[by_name["Mystical Elf"]], index[by_name["Upstart Goblin"]], id_to_code)
+    return Probe(index[by_name["Card Trooper"]], index[by_name["Upstart Goblin"]], id_to_code)
 
 
 def load(deck=None):
