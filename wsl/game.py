@@ -202,7 +202,7 @@ def search_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, r
 
 def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, resp_weights=None,
                greedy=False, stop_unseen=False, stop_windows=False, first_actions=None, belief=None,
-               decider=None) -> list[TurnRollout]:
+               decider=None, held_windows=frozenset()) -> list[TurnRollout]:
     """K rollouts: replay `history`, then `player` plays turn `turn` by softmax policy (greedy: each
     player takes its policy's most likely choice, no exploration; stop_unseen: stop at the first
     turn-player choice between 2+ actions that the search never visited, for re-planning;
@@ -252,10 +252,16 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
                 last_turn_act[i] = int(info["option_act_"][i][acts[i]])
             elif stop_windows and (kinds == KIND_PASS).any() and \
                     (live := live_interruptions(info, i, n, kinds, tags, id_to_code)):
+                cid = lambda o: int(info["option_card_"][i][o])
+                cards = [0] + [id_to_code[cid(o)] if 0 < cid(o) < len(id_to_code) else 0 for o in live]
+                if tuple(sorted(cards)) in held_windows:  # already judged "hold" this turn: pass inline
+                    acts[i] = int(np.flatnonzero(kinds == KIND_PASS)[0])
+                    last_actor[i] = int(info["to_play"][i])
+                    out[i].actions.append(int(acts[i]))
+                    continue
                 out[i].window_at = len(out[i].actions)
                 out[i].window_options = [int(np.flatnonzero(kinds == KIND_PASS)[0])] + live
-                cid = lambda o: int(info["option_card_"][i][o])
-                out[i].window_cards = [0] + [id_to_code[cid(o)] if 0 < cid(o) < len(id_to_code) else 0 for o in live]
+                out[i].window_cards = cards
                 active[i] = False
                 continue
             elif resp_weights is not None and int(info["msg"][i]) == CHAIN and \
@@ -342,8 +348,12 @@ def play_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, rng
     weights, resp_weights = search_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, rng)
     prefix, replans, windows, held = list(history), 0, 0, set()
     while True:
+        if len(prefix) - len(history) > MAX_TURN_STEPS:  # runaway turn: finish it without more stops
+            return turn_batch(envs, k, prefix, player, turn, weights, tags, id_to_code, rng, resp_weights,
+                              greedy=True)[0]
         r = turn_batch(envs, k, prefix, player, turn, weights, tags, id_to_code, rng, resp_weights, greedy=True,
-                       stop_unseen=replans < MAX_REPLANS, stop_windows=windows < MAX_WINDOWS)[0]
+                       stop_unseen=replans < MAX_REPLANS, stop_windows=windows < MAX_WINDOWS,
+                       held_windows=frozenset(held))[0]
         if r.window_at is None and r.unseen_at is None and windows >= MAX_WINDOWS:
             REPLAN_LOG.append({"turn": turn, "window_budget_exhausted": True})
         if r.unseen_at is not None:  # a choice the search never visited: re-plan from here
@@ -355,9 +365,6 @@ def play_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, rng
             prefix = r.actions
         elif r.window_at is not None:  # the opponent can interrupt here: use now or hold?
             key = tuple(sorted(r.window_cards))
-            if key in held:  # same cards, already judged "hold" this turn: don't spend budget again
-                prefix = r.actions + [r.window_options[0]]
-                continue
             windows += 1
             choice = choose_window(envs, k, r.actions, r.window_options, player, turn, weights, resp_weights,
                                    tags, id_to_code, rng)
