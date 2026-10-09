@@ -178,12 +178,18 @@ def hint_priors(cards, acts, n, tags, id_to_code, msg) -> np.ndarray:
         _HAND_TRAP_MONSTERS = {c for c, t in db.execute("select id, type from datas")
                                if t & 0x1 and tags.get(c, {}).get("hand", 0) > 0}
     out = np.zeros(n)
+    codes = [id_to_code[int(c)] if 0 < int(c) < len(id_to_code) else 0 for c in cards[:n]]
+    battle_trap = msg == IDLE and any(c in own_turn_traps() and tags.get(c, {}).get("hand", 0) > 0 for c in codes)
     for o in range(n):
+        if battle_trap and chr(int(acts[o])) == "b":
+            # Evenly Matched from the hand needs an empty field at the end of the Battle Phase: enter it
+            # before anything else is a real line, but the phase prior (-3) made rollouts ~never try it.
+            out[o] = 3.0
         cid = int(cards[o])
         code = id_to_code[cid] if 0 < cid < len(id_to_code) else 0
         if msg == IDLE and code in _HAND_TRAP_MONSTERS and chr(int(acts[o])) in "ms":  # set / normal summon
             out[o] = HINT_PENALTY
-        elif msg == CHAIN and tags.get(code, {}).get("hand", 0) > 0 and chr(int(acts[o])) == "h":  # from hand
+        elif msg == CHAIN and tags.get(code, {}).get("hand", 0) > 0 and chr(int(acts[o])) == "h" and                 code not in own_turn_traps():  # from hand
             out[o] = OWN_TURN_TRAP_HINT
     return out
 
@@ -289,6 +295,21 @@ def draw_traps() -> set:
         pat = re.compile(r"each time your opponent [^.]*summons[^.]*draw", re.I)
         _DRAW_TRAPS = {c for c, d in db.execute("select id, desc from texts") if d and pat.search(d)}
     return _DRAW_TRAPS
+
+
+_OWN_TURN_TRAPS = None
+
+
+def own_turn_traps() -> set:
+    """Hand traps also meant for your own turn: Evenly Matched activates from the hand at the end of
+    your Battle Phase going second, so the hold-on-your-turn hint mustn't apply (it set Evenly instead)."""
+    global _OWN_TURN_TRAPS
+    if _OWN_TURN_TRAPS is None:
+        import sqlite3
+        db = sqlite3.connect(os.path.expanduser("~/ygo/run/cards.cdb"))
+        _OWN_TURN_TRAPS = {c for c, d in db.execute("select id, desc from texts")
+                           if d and "end of the battle phase" in d.lower() and "from your hand" in d.lower()}
+    return _OWN_TURN_TRAPS
 
 
 def respond(info, i, n, kinds, tags, id_to_code, last_turn_act) -> int:
@@ -551,6 +572,10 @@ def play_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, rng
                 plan = ()
             key = tuple(sorted(r.window_cards))
             windows += 1
+            draws = [o for o, c in zip(r.window_options[1:], r.window_cards[1:]) if c in draw_traps()]
+            if draws:  # Mulcharmys / Maxx "C": only worth anything before the summons, so use at once
+                prefix = r.actions + [draws[0]]
+                continue
             choice = choose_window(envs, k, r.actions, r.window_options, player, turn, weights, resp_weights,
                                    tags, id_to_code, rng)
             WINDOW_LOG[-1]["cards"] = r.window_cards
