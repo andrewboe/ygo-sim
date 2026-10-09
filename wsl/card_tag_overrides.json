@@ -1,5 +1,17 @@
 {
-  "Aleister the Invoker": {"hand": 0, "why": "hand effect is an ATK boost, not an interruption"},
-  "Griffoh": {"hand": 0, "why": "hand quick effect summons it; not an interruption"},
-  "Fydraulis Harmonia": {"hand": 0, "why": "combo piece"}
+ "Aleister the Invoker": {
+  "hand": 0,
+  "why": "hand effect is an ATK boost, not an interruption"
+ },
+ "Griffoh": {
+  "hand": 0,
+  "why": "hand quick effect summons it; not an interruption"
+ },
+ "Fydraulis Harmonia": {
+  "hand": 0,
+  "why": "combo piece"
+ },
+ "Elfnote Regina": {
+  "field": 0.0
+ }
 }
