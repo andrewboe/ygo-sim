@@ -208,6 +208,12 @@ def cmd_report(args):
     print(f"wrote {write(Path(args.out))}")
 
 
+def cmd_upcoming(args):
+    from .upcoming import print_report, upcoming
+
+    print_report(upcoming())
+
+
 def cmd_matrix(args):
     from .matrix import MATRIX, build
 
@@ -301,6 +307,9 @@ def main():
 
     sc = sub.add_parser("screen", help="funnel stage 1 summary: going-first and going-second scores")
     sc.set_defaults(func=cmd_screen)
+
+    up = sub.add_parser("upcoming", help="upcoming TCG cards for any new set: announced, OCG-projected, OCG play")
+    up.set_defaults(func=cmd_upcoming)
 
     rp = sub.add_parser("report", help="stage 1 report as a self-contained HTML page")
     rp.add_argument("--out", default="reports/stage1.html")
