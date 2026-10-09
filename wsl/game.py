@@ -344,7 +344,9 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
                 continue
             if t < len(history):  # replay flag on all but the last forced move (see goldfish.REPLAY)
                 acts[i] = history[t] + (REPLAY if t < len(history) - 1 else 0)
-            elif belief is not None and not redealt[i] and int(info["to_play"][i]) == decider:
+            elif belief is not None and not redealt[i] and int(info["to_play"][i]) == decider and                     int(info["msg"][i]) == IDLE:
+                # Re-deal only at an open Main Phase decision: swapping card identities while a chain or
+                # selection is pending changed cards that pending effects point at (engine segfault).
                 stage_hidden(int(i), belief.sample(rng, decider, info, i))
                 acts[i] = REDEAL  # same decision, hidden cards re-dealt; not part of the history
                 redealt[i] = True
@@ -365,6 +367,12 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
                     acts[i] = hashes.index(plan[plan_pos[i]])  # the best line's own move
                     plan_pos[i] += 1
                 elif greedy:
+                    if stop_unseen and on_plan[i] and plan_pos[i] < len(plan) and int((kinds == 0).sum()) >= 2:
+                        # The real game left the best line (an interruption landed): re-plan from here,
+                        # as a player reassesses after being hit, instead of following stale preferences.
+                        out[i].unseen_at = len(out[i].actions)
+                        active[i] = False
+                        continue
                     on_plan[i] = False  # the real game left the best line: policy from here
                     out[i].off_plan = bool(plan)
                     acts[i] = int(np.argmax(np.array([weights.get(h, 0.0) for h in hashes]) + priors))
