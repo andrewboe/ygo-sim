@@ -2,7 +2,7 @@
 
 Researched 2026-10-09. Written for the deck simulator. It complements `strategy.md`, which covers general play theory.
 
-**How to read this.** Claims come from the sources at the end. Points tagged **[data]** come from this repo's `data/tournament_meta_decks_60d.json`, which holds 957 YGOPRODeck TCG tournament lists dated 2026-07-10 to 2026-10-03. I sliced it at the F&L date (2026-09-21), which leaves **184 post-ban lists**, mostly WCQ Regionals plus YCS Guayaquil. Card counts are mean copies per list. Points tagged **[synthesis]** are my own reasoning from card text (local `cards.json`) and are not claims made by any source. Where I could not confirm something, the text says so.
+**How to read this.** Claims come from the sources at the end. Points tagged **[data]** come from this repo's `data/tournament_meta_decks_60d.json`, which holds 957 YGOPRODeck TCG tournament lists dated 2026-07-10 to 2026-10-03. Sliced at the F&L date (2026-09-21): **184 post-ban lists**, mostly WCQ Regionals plus YCS Guayaquil; counts are mean copies per list. **[synthesis]** = my reasoning from card text (local `cards.json`), not a sourced claim.
 
 Naming: YGOPRODeck calls the "Dark Magician Chaos Ritual" / "Chaos Ritual" decks on yugiohmeta.com **Light and Darkness Ritual (LDR / ROLAD)**.
 
@@ -38,9 +38,9 @@ The sim's current weights match the post-ban column well. The one thing to check
 
 ### Staple usage, post-ban [data] (share of lists running ≥1 in main / in side)
 - **Mulcharmy Fuwalos** 92% main (avg 2.76). **Ash Blossom** 81% (avg 2.4). **Droll & Lock Bird** 86% (avg 1.7, the Semi-Limited cap). **Mulcharmy Purulia** 70% main plus 34% side. Fuwalos+Purulia is now the default "draw-punish" pair. Meowls is side-only (7%).
-- **Situational main-deck picks:** The Fallen & The Virtuous 31%, Ghost Belle 29%, Dominus Impulse 27%, Fydraulis Harmonia 22% (Synchro decks), Ghost Ogre 22%, Nibiru 20%, Super Poly 20%, Dominus Spark 19%. Veiler (8%) and Imperm (12%) are low.
-- **Side deck:** Solemn Judgment 52%, Nibiru 50%, Triple Tactics Talent 43%, Harpie's Feather Duster 40%, Pot of Sloth 39%, Called by the Grave 36%, Ghost Ogre 29%, Lava Golem 24%, Solemn Accusation 24%, Evenly Matched 23%, Ra Sphere Mode 17%, D.D. Crow 16%, Mistaken Arrest 14%.
-- **Implication [synthesis]:** most opening hands going second hold 1 to 2 hand traps, and the most common of them punish *any* Extra Deck summon (Fuwalos) or hand summon (Purulia) without targeting a specific chokepoint. A sim hand-trap model should treat "draw-punish" as distinct from "negate". Combo decks often respond by stopping early to cap the opponent's draws. RoadoftheKing notes the same Maxx-C/Mulcharmy effect in the OCG. Siding traps (Solemns) for game 2 is common.
+- **Situational main:** F&V 31%, Ghost Belle 29%, Dominus Impulse 27%, Harmonia 22%, Ghost Ogre 22%, Nibiru 20%, Super Poly 20%, Dominus Spark 19%; Veiler 8%, Imperm 12%.
+- **Side:** Solemn Judgment 52%, Nibiru 50%, TTT 43%, Feather Duster 40%, Pot of Sloth 39%, Called 36%, Ghost Ogre 29%, Lava Golem 24%, Accusation 24%, Evenly Matched 23%, Ra Sphere 17%, Crow 16%, Mistaken Arrest 14%.
+- **Implication [synthesis]:** most opening hands going second hold 1 to 2 hand traps, and the most common of them punish *any* Extra Deck summon (Fuwalos) or hand summon (Purulia) without targeting a specific chokepoint. A sim hand-trap model should treat "draw-punish" as distinct from "negate". RotK notes the same Mulcharmy effect (smaller end boards) in the OCG.
 
 ### Going first vs second
 No source gives TCG first/second win-rate data for this format. Flipside describes the format as decks that win going first "through ~2 pieces of interaction". Most top decks (Elfnote, LDR, Mitsurugi, Power Patron) are built to go first. The clear go-second decks are Blitzclique (YGOPRODeck author: "pure go-second") and, to a lesser degree, Branded (Branded Fusion) and Sky Striker. Treat everything else in this paragraph as [synthesis].
@@ -49,7 +49,7 @@ No source gives TCG first/second win-rate data for this format. Flipside describ
 
 ## 2. Deck profiles
 
-Each profile covers the engine, the turn-1 plan, chokepoints, the tech package, matchups, and recent results. Chokepoints come from card text and are [synthesis] unless a source is cited.
+Chokepoints are [synthesis] from card text unless a source is cited.
 
 ### 2.1 Elfnote (~17%, #1)
 - **Engine.** Synchro "Singer" monsters whose effects key off the **center Main Monster Zone** (MDM guide). Core counts [data]: Elfnote Lucina 3, Regina 3, Elfnote Power Patron 2.7, Medius the Pure 2.2, Vidolium the Unstable Power Patron of Unity 2.2, Elfnotes: Welcome Home 2, Tinia 1, Fortuna 1, Rhapsodia of Madness 1, Terminus 1, Junoldo 1. Variants: Angelechy (4), Synchron (3), Fiendsmith (2).
@@ -59,18 +59,18 @@ Each profile covers the engine, the turn-1 plan, chokepoints, the tech package, 
   - Medius searches or summons a Power Patron.
   - Welcome Home summons an Elfnote from the Deck and imposes a Synchro-only Extra Deck lock.
 - **Opponent-turn disruption** comes from monsters in the GY or on the field moving into the center zone: Lucina bounces a Level ≤6 monster, Tinia banishes a random card from the hand until End Phase, Fortuna bounces a face-up Spell/Trap.
-- **End boards** (MDM/Master Duel lists, not TCG-verified):
+- **End boards** (Master Duel lists, not TCG-verified):
   - Baronne de Fleur + Herald + Ecclesia + trap.
   - Baronne + Auxilla + a Level 12 dragon + Rhapsodia + Atrii, with Regina and Tinia summoned on the opponent's turn.
-  - Extra Deck staples [data, 100% of lists]: Crystal Wing Synchro Dragon, F.A. Dawn Dragster, Elfnote Seraphim Strelitzia, Elfnote June Pride; Chaos Angel at 93%.
+  - Extra Deck staples [data]: Crystal Wing, F.A. Dawn Dragster, Seraphim Strelitzia, June Pride, Chaos Angel.
   - RoadoftheKing reports the OCG Ars Magna build ending on about 8 disruptions: 3 negates plus 2 hand banishes.
 - **Chokepoints [synthesis].**
   - Ash on **Lucina's search** or **Medius's search/summon**. Ash, Veiler or Imperm on **Regina's Deck summon**. Droll after the first search.
   - Fuwalos/Purulia are both live: Lucina and Tinia summon themselves from the hand, and the deck makes many Synchro summons. MDM calls the deck "awkward" against Fuwa/Maxx C.
   - The deck plays through Ash/Imperm better than most, thanks to Loading... and starter redundancy.
-  - It is weak to center-zone denial (Orcust tokens, zone locks) and to Nibiru (1.5 copies in the average side). Some lines refuse non-Synchro Extra Deck summons because of the Welcome Home and Power Patron locks.
-- **Tech [data].** Main: Ash 2.5 (including alt-art printings), Harmonia 2.3, Ghost Belle 1.8, Droll 1.4, Ghost Ogre 0.9, Nibiru 0.7, Called 0.5. Side: Nibiru, Ghost Ogre, Lava Golem, Pot of Sloth, Solemn Judgment, D.D. Crow, Mistaken Arrest, Feather Duster, Evenly Matched, TTT, Bystials.
-- **Matchups and turn order.** Strong going first. The MDM guide calls it weak going second because the Power Patron engine struggles into established boards. Flipside says Omega's ban "gives players more cards going second" against it. One MD guide notes Branded can lose fast to Secreterion without Super Poly.
+  - It is weak to center-zone denial (Orcust tokens, zone locks) and to Nibiru (1.5 copies in the average side).
+- **Tech [data].** Main: Ash 2.5 (including alt-art printings), Harmonia 2.3, Ghost Belle 1.8, Droll 1.4, Ghost Ogre 0.9, Nibiru 0.7, Called 0.5. Side: Nibiru 1.5, Ghost Ogre, Lava Golem, Sloth, Judgment, Crow, Mistaken Arrest.
+- **Matchups and turn order.** Strong going first. The MDM guide calls it weak going second because the Power Patron engine struggles into established boards. Flipside says Omega's ban "gives players more cards going second" against it.
 - **Results.** Japan Championship 2026 T8. YCS Montreal (Aug 15, 755p): winner (F. Osorio) and T4, 7 in T32. YCS Paris (Sep 19, 2588p): runner-up, T4 and 2×T8. YCS Guayaquil (Oct 3, 263p): **winner** (G. Trivino), T4, 2×T8, 12 of T32. Duluth WCQ winner. NA WCQ 6 of 64. EU WCQ one T8.
 - **Trajectory:** rising, and now co-#1 with LDR. The Tinia limit barely slowed it.
 
@@ -87,25 +87,25 @@ Each profile covers the engine, the turn-1 plan, chokepoints, the tech package, 
   - Azamina/Sinful Spoils: WANTED 2.0, Diabellstar 1.8, The Hallowed Azamina.
   - Mitsurugi: Prayers 1.8, Ritual, Mirror, Aramasa, Saji, Murakumo, Habakiri, each about 0.6.
   - Branded (7 lists).
-- **Interaction and Links.** Main-deck **Dominus Impulse** 1.8 and **Dominus Spark** 1.2. Link line [data]: S:P Little Knight 86%, Cyberse Contract Witch, Charmer Quartet, Selene, Zenna's Deceiving Doll Maidens, Dharc. Protectcode Talker was in the Paris-winning list and is now banned.
-- **Typical board** (YGOPRODeck community breakdown; not a TCG tournament source): Magician of Dark Chaos (protected, banishes face-down) + Dark Magician of Destruction + a set Mind Shuffle/Quick-Play from Griffoh + Dominus traps in hand. The deck is described as control/midrange with "a theoretically infinite grind game".
+- **Interaction and Links.** Main-deck **Dominus Impulse** 1.8 and **Dominus Spark** 1.2. Links [data]: S:P Little Knight 86%, Contract Witch, Charmer Quartet, Selene, Zenna's Doll Maidens. Protectcode Talker (Paris winner) is now banned.
+- **Typical board** (YGOPRODeck community breakdown; not a TCG tournament source): Magician of Dark Chaos (protected, banishes face-down) + Dark Magician of Destruction + a set Mind Shuffle/Quick-Play from Griffoh + Dominus traps in hand.
 - **Chokepoints [synthesis].**
   - Ash hits Ragged Records, Skull Archfiend's search, Curtain, Diabellstar/WANTED and Mitsurugi searches. It does *not* hit Griffoh's set or Black Chaos's place.
   - Once Magician of Dark Chaos or Black Chaos is protected, only targeting removal (or non-activated removal) works, so interrupt early.
   - GY-based hand traps (Ghost Belle, D.D. Crow, Bystials) hit LDR's GY recursion and Skull Archfiend.
   - Fuwalos punishes the DM Fusion and Link turns.
   - **Dominus Impulse from the hand** shuts off the owner's own LIGHT/EARTH/WIND monster effects. That is an engine constraint the sim must model.
-- **Tech [data].** Main: Fuwalos 3.0, Purulia 2.6, Ash 2.3, Droll 1.9, Kuriboh - Multiply! 1.5, Harmonia 0.6, F&V 0.6, Nibiru 0.5. Side: Nibiru 1.7, Pot of Sloth 1.5, **Lava Golem 0.9**, TTT, Spark, Ra Sphere Mode, BLS, Mitsurugi Kusanagi/Great Purification/Futsu, Meowls, Evenly Matched. TCG Corner says LDR and Mitsurugi players are already siding **The Great Gallant Bandit** (BETB).
+- **Tech [data].** Main: Fuwalos 3.0, Purulia 2.6, Ash 2.3, Droll 1.9, Kuriboh - Multiply! 1.5, Harmonia 0.6, F&V 0.6, Nibiru 0.5. Side: Nibiru 1.7, Sloth 1.5, **Lava Golem 0.9**, TTT, Spark, Ra Sphere Mode, Mitsurugi singles. TCG Corner says LDR and Mitsurugi players are already siding **The Great Gallant Bandit** (BETB).
 - **Matchups and turn order.** No source covers specific matchups. It plays as a first-turn control deck, but its Dominus/Kuriboh suite also works going second [synthesis].
 - **Results.** NA WCQ (Jul 11) 12 of 64. EU WCQ 13 of 64. YCS Montreal 3×T8 (9 of T32). **YCS Paris winner** (Vladis Baranovskis, DM build with Mitsurugi/Azamina), 11 of 64. YCS Guayaquil runner-up (Franco Persano, Azamina Mitsurugi DM) plus 2×T8, 10 of T32. Kissimmee WCQ winner (LDR Branded Elfnote).
-- **Trajectory:** stable at #1–2. Flipside calls it the most dominant US-originated strategy since Burning Abyss. BETB gives it **Black Skull Dragon, the Archfiend of Unity** (sets an LDR Spell/Trap on summon) and **Spell Shattering Sword** (usually 1 copy each, per TCG Corner and RotK).
-- **"Chaos Ritual" vs "DM Chaos Ritual".** These are the same engine without the DM package, built on Azamina, Branded, Mitsurugi or Fiendsmith instead. In the OCG (RotK, Jul 18 to Aug 2) LDR had 20 of 145 top decks across variants: DM 6, Clown Crew 4, Dogmatika 3, Azamina 2, Fallen 2. For "Chaos Ritual (OCG)" projections, that report is the best guide. Clown Crew (new TCG card *Clown Crew Cappello*, BETB-EN099) and Dark Time Wizard LDR are the OCG-only shells to watch.
+- **Trajectory:** stable at #1–2. BETB gives it **Black Skull Dragon, the Archfiend of Unity** (sets an LDR Spell/Trap on summon) and **Spell Shattering Sword** (usually 1 copy each, per TCG Corner and RotK).
+- **"Chaos Ritual" vs "DM Chaos Ritual".** These are the same engine without the DM package, built on Azamina, Branded, Mitsurugi or Fiendsmith instead. In the OCG (RotK, Jul 18 to Aug 2) LDR had 20 of 145 top decks across variants: DM 6, Clown Crew 4, Dogmatika 3, Azamina 2, Fallen 2. Clown Crew LDR (BETB-EN099 *Clown Crew Cappello*) is the OCG shell to watch.
 
 ### 2.3 Sky Striker / Radiant Typhoon (~10%)
-- **Engine [data].** Engage! 2.6, Radiant Typhoon Vision 2.6, Raye 2.2, Linkage! 2.2, Widow Anchor 2.2, Lemnisgate 1.5, Roze 1.4, Pot of Desires 1.6, Upstart Goblin 1.1, F&V 2.5. Extra Deck: Hayate, Kagari, Shizuku, Camellia, Zeke, Amatsu, Zero, Azalea, plus Albion/Ecclesia (Branded fusion via F&V). Some lists add R.B. or Radiant Typhoon monsters.
-- **Plan.** A spell-based grind deck: Raye goes into a Link, and Quick-Play spells give interaction on either turn. It is less dependent on Extra Deck volume than the combo decks [synthesis].
+- **Engine [data].** Engage! 2.6, Radiant Typhoon Vision 2.6, Raye 2.2, Linkage! 2.2, Widow Anchor 2.2, Lemnisgate 1.5, Roze 1.4, Pot of Desires 1.6, Upstart Goblin 1.1, F&V 2.5. Extra Deck: the Sky Striker Links plus Albion/Ecclesia via F&V.
+- **Plan.** A spell-based grind deck: Raye goes into a Link, and Quick-Play spells give interaction on either turn.
 - **Chokepoints [synthesis].** Ash on Engage! (search) or Linkage!. Called/Crow on GY effects. Fuwalos only matters on Link turns. Solemn Judgment and Spell counters hurt it, and so does Anti-Spell-type floodgates.
-- **Tech [data].** Ash 2.2, Droll 2.0, Ghost Ogre 1.4, Fuwalos 1.1, MST 0.9, Forbidden Crown 0.9, Called 1.0. Side: Fuwalos, Solemn Accusation, Evenly Matched, Purulia, Ra Sphere, Sloth, Lava Golem, Judgment.
+- **Tech [data].** Ash 2.2, Droll 2.0, Ghost Ogre 1.4, Fuwalos 1.1, MST 0.9, Forbidden Crown 0.9, Called 1.0. Side: Fuwalos, Accusation, Evenly Matched, Ra Sphere.
 - **Turn order.** Flexible. It is the most going-second-viable of the top decks [synthesis].
 - **Results.** YCS Sydney (Feb 28, 746p): **winner** (Radiant Typhoon, D. Italiano) plus a T8. YCS Columbus (May 23–24, 1618p): Radiant Typhoon Sky Striker T8. **NA WCQ 2026 winner** (Ryan Yu). Catskill WCQ T4 (Sep). Post-ban [data]: 1 winner, 3×T4, 4×T8.
 - **Trajectory:** steady tier 1.5. BETB adds Swiftwind Panther Warrior / Dark Time Wizard, which pair with the Radiant Typhoon engine (TCG Corner).
@@ -125,23 +125,22 @@ Each profile covers the engine, the turn-1 plan, chokepoints, the tech package, 
 - **Trajectory:** rising. It gains from Kewl Tune leaving and from the breaker-heavy BETB environment.
 
 ### 2.5 Invoked (~6%)
-- **Engine [data].** Aleister the Reminiscent 3, Aleister the Invoker 2.9, Aiwass, Divine Spirit of the Law 2.9, Sacred Spirit Sword Aiwass 2.7, Magical Meltdown 2.9, Invocation - "Sword" 2.6, Invocation 2.1, Super Poly 1.8. Extra Deck: Baybarron, Aeon, Invoker of Madness, Oceanus, Raidjin, Sorath, Elysium, Augoeides, Caliga, Mechaba.
+- **Engine [data].** Aleister the Reminiscent 3, Aleister the Invoker 2.9, Aiwass, Divine Spirit of the Law 2.9, Sacred Spirit Sword Aiwass 2.7, Magical Meltdown 2.9, Invocation - "Sword" 2.6, Invocation 2.1, Super Poly 1.8.
 - **Pieces.**
   - Aleister the Reminiscent banishes an Invoked to search Invocation.
   - Aiwass banishes itself to search an Aleister and grants an extra Normal Summon.
   - Magical Meltdown makes Fusion activations unnegatable, and the opponent cannot respond to those Fusion Summons.
 - **Chokepoints [synthesis].** Ash on Aiwass's or Aleister's search. Once Meltdown resolves, chain-negation of Fusions is off, so interaction has to land before Meltdown or on the searches. Fuwalos draws still apply because they are not activations. GY hate (Crow, Bystials, Ghost Belle) hits Aiwass and Invocation recursion.
-- **Tech [data].** Fuwalos 2.7, Ash 2.7, Purulia 2.1, Droll 1.8, Ghost Belle 1.2, Called 0.9, Nibiru 0.8. Side: Ghost Ogre 1.4, Nibiru, Accusation, D.D. Crow, Gamma Summon, Artifact Lancea, Dimensional Fissure.
+- **Tech [data].** Fuwalos 2.7, Ash 2.7, Purulia 2.1, Droll 1.8, Ghost Belle 1.2, Called 0.9, Nibiru 0.8. Side: Ghost Ogre 1.4, Nibiru, Accusation, D.D. Crow.
 - **Results.** EU WCQ T8 (D. Siracusa). Paris and Montreal T32. Post-ban [data]: **4 winners**, 1 runner-up, 1×T4, 4×T8. That is the best conversion rate in the post-ban sample.
-- **BETB.** **Invoked De Anima** (on summon, wipes the opponent's Extra-Deck monsters or their Spells/Traps; negates GY effects) and **Invocation - "Grail"** (can use an opponent's monster as material). Both strengthen Invoked and Magistus/Fairy Tail. OCG impact is unconfirmed: Invoked had only 1 top deck in the RotK sample.
+- **BETB.** **Invoked De Anima** (on summon, wipes the opponent's Extra-Deck monsters or their Spells/Traps; negates GY effects) and **Invocation - "Grail"** (can use an opponent's monster as material). OCG impact unconfirmed (1 Invoked top in RotK sample).
 
 ### 2.6 Magistus Invoked Fairy Tail (~5%)
-- **Engine [data].** Fairy Tail - Luna 3 (on Normal Summon, searches an 1850-ATK Spellcaster; Quick Effect bounce), Regulus 2.5, Spenta 2.3, Aleister the Reminiscent 2.3, Fairy Tail Ball 2.2, Verre Magic - Lacrima 2.2, Matchgiru 1.7, Super Poly 1.7, Crowley/Zoroa/Endymion Empire 1. Extra Deck: Zoroa Verethragna, Weaver/Teller of Fairy Tails, Wiccat, Artemis, Endymion, Chorozo, Invoked Baybarron/Aeon/Sorath.
-- **Plan.** MD players say it "can play through half boards" and OTKs easily via the field spell. Missing Extra-Deck pieces (Crowley) cause bricks.
+- **Engine [data].** Fairy Tail - Luna 3 (on Normal Summon, searches an 1850-ATK Spellcaster; Quick Effect bounce), Regulus 2.5, Spenta 2.3, Aleister the Reminiscent 2.3, Fairy Tail Ball 2.2, Verre Magic - Lacrima 2.2, Matchgiru 1.7, Super Poly 1.7, Crowley/Zoroa/Endymion Empire 1.
+- **Plan.** MD players say it plays through half boards and OTKs via the field spell; it bricks without Crowley.
 - **Chokepoints [synthesis].** Ash on Luna's search or Regulus's search. Fuwalos is heavy against the Magistus Link/Fusion climb.
-- **Side [data].** Santa Claws 1.7 (unusual), Nibiru, Sloth, TT Thrust, Lightning Storm, Cosmo Queen, Secret Village.
+- **Side [data].** Santa Claws 1.7, Nibiru, Sloth, Lightning Storm.
 - **Results.** It was the Columbus "sleeper" that just missed T8 (YGOPRODeck). Fairy Tail T32 at Montreal. Post-ban [data]: runner-up, T4, 4×T8.
-- **BETB.** Verre, the Maid of Endymion; Invoked De Anima; Grail.
 
 ### 2.7 Mitsurugi (~5%) and Mitsurugi Yummy (~6%)
 - **Engine [data, pure].** Prayers 3, Pre-Prep 3, Aramasa 2.8, Murakumo 2.7, Mitsurugi Ritual 2.3, Ragged Records 1.8, Ruler of the End of the World 2.3, plus singles of Saji, Kusanagi, Wousu, Habakiri, Futsu, Mirror, Great Purification.
@@ -160,13 +159,13 @@ Each profile covers the engine, the turn-1 plan, chokepoints, the tech package, 
 - **Trajectory:** stable. Flipside argued Prayers/Ritual should have been hit and was not.
 
 ### 2.8 Branded (~5%)
-- **Engine [data].** F&V 3, Super Poly 2.2, Fallen of the White Dragon 2, Branded in High Spirits 2 (now Semi-Limited), Nadir Servant 2, Aluber 1.9, Branded Opening 1.9, Blazing Cartesia 1.8, Incredible Ecclesia 1.7, Branded Fusion 1. A Dracotail sub-engine (Faimena, Lukias, Urgula, Mululu, Phryxul) appears in about a third of lists. Extra Deck at 100%: Secreterion, Mirrorjade, Ecclesia and the Dark Dragon, Titaniklad, Granguignol, Albion, Rindbrumm, Dogma Dragon.
+- **Engine [data].** F&V 3, Super Poly 2.2, Fallen of the White Dragon 2, Branded in High Spirits 2 (now Semi-Limited), Nadir Servant 2, Aluber 1.9, Branded Opening 1.9, Blazing Cartesia 1.8, Incredible Ecclesia 1.7, Branded Fusion 1. A Dracotail sub-engine (Faimena, Lukias, Urgula, Mululu, Phryxul) appears in about a third of lists. Extra Deck: the standard Branded fusion suite (Secreterion, Mirrorjade, Albion, Titaniklad, Granguignol, Rindbrumm).
 - **Character.** YGOPRODeck calls it a grind deck whose engine resists hand traps, with Aluber's GY effect stopping OTKs and Branded Fusion "relevant going second".
 - **Chokepoints [synthesis].** Ash on Branded Fusion (sends from the Deck) or on Aluber's/Opening searches. Crow/Belle on Fusion GY triggers (Albion, Mirrorjade). **Mistaken Arrest** (side 2.4 avg) is the deck's own tool against searchers.
-- **Results.** **YCS Columbus winner** (Jesse Kotton, Branded Dracotail; Branded runner-up too). Team YCS Las Vegas runner-up team. EU WCQ 2×T4. Sydney: Dracotail 13 of T32. Since then it has slipped to about 5%. Flipside thinks the High Spirits hit was "out of touch" because the deck should improve without Kewl Tune and Dimension Shifter.
+- **Results.** **YCS Columbus winner** (Jesse Kotton, Branded Dracotail; Branded runner-up too). Team YCS Las Vegas runner-up team. EU WCQ 2×T4. Sydney: Dracotail 13 of T32. Since then it has slipped to about 5%. Flipside calls the High Spirits hit "out of touch".
 
 ### 2.9 Power Patron / Artmage (~4%)
-- **Engine [data].** Nervedo the Shadebeast Power Patron 3 (Pendulum Effect negates an opponent's monster effect activated in response to a Power Patron/Artmage monster effect), Vidolium 2.9, Pendulum Treasure 2.7, Medius the Pure 2.1, Artmage Power Patron 1.8 (Quick-Effect Fusion), Jupredo 1.6, Artmage spells, Terminus 1 (Limited), Junoldo 1.1. Extra Deck at 100%: Varudras, Artmage Diactorus, Non-Finito, Beyond the Pendulum, Nerva, Purification Power Patron, Predaplant Dragostapelia, Junora.
+- **Engine [data].** Nervedo the Shadebeast Power Patron 3 (Pendulum Effect negates an opponent's monster effect activated in response to a Power Patron/Artmage monster effect), Vidolium 2.9, Pendulum Treasure 2.7, Medius the Pure 2.1, Artmage Power Patron 1.8 (Quick-Effect Fusion), Jupredo 1.6, Artmage spells, Terminus 1 (Limited), Junoldo 1.1.
 - **FTK history.** A Gustav Max FTK topped regionals early in the Blazing Dominion format (YGOrg). Terminus being Limited now targets this.
 - **Chokepoints [synthesis].** Ash on Medius or Terminus (sends from the Deck). Nervedo punishes monster-effect hand traps (Ash/Veiler/Belle/Ogre) used in response to its monsters, so spell- or trap-based interaction (Droplet, Called, Dominus) is better. Fuwalos is very strong against its Fusion/Link/Pendulum volume.
 - **Side [data].** Ash 2.3, Purulia 2.0, Evenly Matched 1.7, Forbidden Crown 1.1.
@@ -174,24 +173,24 @@ Each profile covers the engine, the turn-1 plan, chokepoints, the tech package, 
 - **BETB (OCG-proven).** **Ars Magna** monsters, **Theorealized Medius**, **Ars Magna "Citrinitas"** (treated as Artmage/DoomZ/Elfnote; searches Medius/Ars Magna), **Philosophorum** (negates), and **Mediclius the Extraordinary Power Patron** (generic Link: mass negate; banishes all opposing cards when pointing to 3). OCG: Ars Magna Power Patron and Ars Magna Artmage both topped. Expect it to rise.
 
 ### 2.10 Lunalight (~4%)
-- **Engine [data].** Gold Leo 3 (searches a Lunalight on summon, then discards), Tri-Brigade Fraktall 2.6, Fire Formation - Tenki 2.2, Masquerade 2.4, Luna Light Perfume 2, Scarlet Tiger/Black Sheep/Silver Hound 2, Kaleido Chick 1.8, Heavy Polymerization 1.6, Foolish Burial Goods 1.6. Extra Deck: Liger/Perfume/Sabre/Leo Dancers, Dugares, Cross-Sheep, Tiger King.
+- **Engine [data].** Gold Leo 3 (searches a Lunalight on summon, then discards), Tri-Brigade Fraktall 2.6, Fire Formation - Tenki 2.2, Masquerade 2.4, Luna Light Perfume 2, Scarlet Tiger/Black Sheep/Silver Hound 2, Kaleido Chick 1.8, Heavy Polymerization 1.6, Foolish Burial Goods 1.6.
 - **Chokepoints [synthesis].** Ash on Gold Leo's search, Fraktall's send or Tenki's search. Fuwalos hits its Fusion/Xyz turn.
 - **Tech [data].** Dominus Impulse 2.4, Fuwalos 3, Purulia 2.2, Droll 1.6. Side: Ash, Meowls, Droplet, Mask of Restrict.
 - **Results.** Sydney 2 in T32 and some Las Vegas presence. Post-ban [data]: 1 winner, 4×T8. I found no YCS top-8 in this window.
 - **Turn order:** I could not confirm whether it prefers going first or second.
 
 ### 2.11 Maliss (~2.5%)
-- **Engine [data].** Chessy Cat 3 (banishes a Maliss to draw 2), March Hare 3, Backup @Ignister 3, Allure of Darkness 2.3, Maliss in Underground 2, Wizard @Ignister, Gold Sarcophagus, Terraforming, Maliss traps. It is a Cyberse Link deck with banish recursion; Extra Deck includes Firewall Dragon, Accesscode, Allied Code Talker, Hearts Crypter, Red Ransom.
+- **Engine [data].** Chessy Cat 3 (banishes a Maliss to draw 2), March Hare 3, Backup @Ignister 3, Allure of Darkness 2.3, Maliss in Underground 2, Wizard @Ignister, Gold Sarcophagus, Terraforming, Maliss traps. It is a Cyberse Link deck with banish recursion.
 - **Interaction:** Dominus Impulse 3, Spark 1.7, Imperm 2.2, Ash 2.5, Bystials.
-- **Chokepoints [synthesis].** Ash on Chessy Cat's draw or Backup @Ignister. Fuwalos against the long Link chain. Banish-recursion means D.D. Crow is weak but Dimensional Fissure-style cards are neutral.
+- **Chokepoints [synthesis].** Ash on Chessy Cat's draw or Backup @Ignister. Fuwalos against the long Link chain. Its banish triggers mean banish-based hate (Fissure, Crow) can feed it rather than stop it.
 - **Side [data].** Purulia 2.7, Mistaken Arrest 2.0, Nibiru 1.8.
 - **Results.** Team Las Vegas (8 in T16, its peak). Arapiraca WCQ winner (Sep 27, Maliss @Ignister). Post-ban [data]: 2 winners. Small share, high conversion.
 
 ### 2.12 Important decks missing from the sim field
-- **Kewl Tune.** It was #1 all summer: EU WCQ winner, NA WCQ 27 of 64, Montreal runner-up plus 10 of T32, Paris 8 of T64. **Rotary is Forbidden**, and Flipside calls it out of contention, possibly rogue. Leaving it out is correct, but its absence explains why Fydraulis Harmonia counts have fallen.
-- **Toon (OCG-dominant; TCG 2026-11-12).** RotK has it #1 in the OCG with 32 of 145 top decks (Jul–Aug), and Flipside says it is "functionally Tier 0". It arrives in TCG *Magnificent Maestros* alongside Witchcrafter and Unchained support. **Not legal yet in the TCG.** Add it to the field in November.
+- **Kewl Tune.** It was #1 all summer: EU WCQ winner, NA WCQ 27 of 64, Montreal runner-up plus 10 of T32, Paris 8 of T64. **Rotary is Forbidden**, and Flipside calls it out of contention, possibly rogue. Leaving it out is correct.
+- **Toon (OCG-dominant; TCG 2026-11-12).** RotK has it #1 in the OCG with 32 of 145 top decks (Jul–Aug), and Flipside says it is "functionally Tier 0". TCG legal from *Magnificent Maestros* (with Witchcrafter/Unchained support); add it in November.
 - **Angelechy (Elfnote).** BETB-TCG adds 7 Angelechy cards (EN090–096). Angelechy Elfnote was already 2% on yugiohmeta. Worth tracking.
-- **Artmage, DoomZ, Dracotail, Sacred Beasts, Ryzeal.** Each holds 1–3% (yugiohmeta). DoomZ was a Columbus top-3 contender per YGOPRODeck but has faded. Sacred Beasts gets *Sacred Beasts Skyfall* in BETB.
+- **Artmage, DoomZ, Dracotail, Sacred Beasts, Ryzeal.** Each holds 1–3% (yugiohmeta). DoomZ was a Columbus top-3 contender but has faded.
 
 ---
 
