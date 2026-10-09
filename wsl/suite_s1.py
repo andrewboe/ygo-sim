@@ -25,30 +25,36 @@ envs = ygoenv.make(task_id="EDOPro-v0", env_type="gymnasium", num_envs=32, num_t
                    duel_seed=5000, shuffle2=False)  # _p2__ decks are stacked: deal in file order
 G.BELIEF = None if trap == "none" else Belief()
 seen, offered_seen = [], []
-orig = G.live_value
-def lv(board, hand, offered, t, idc):
-    v = orig(board, hand, offered, t, idc); seen.append(v)
-    offered_seen.append(sorted({names.get(idc[c], str(c)) for c in offered if 0 < c < len(idc)}))
+orig = G.probe_value
+def lv(st, t, idc):
+    v = orig(st, t, idc); seen.append(v)
+    offered_seen.append(sorted({names.get(idc[c], str(c)) for c in st["offered"] | st["breaker_offered"]
+                                if 0 < c < len(idc)}))
     return v
-G.live_value = lv
+G.probe_value = lv
 nm = lambda c: names.get(abs(int(c)), str(c))
 vals = []
 for g in range(first, first + n_deals):
-    set_opening(g); rng = np.random.default_rng(g)
+    set_opening(g); rng = np.random.default_rng(g + 1000003 * int(os.environ.get("SEARCH_SEED", 0)))
     _, info0 = envs.reset()
     hand0 = [nm(c) for c in info0["hand_codes_"][0][0] if c]
     r = G.play_turn(envs, 32, [], 0, 1, 30, 1.0, tags, id_to_code, rng)
-    seen.clear(); offered_seen.clear()
     G.BELIEF = None  # measure the real board only
     from collections import defaultdict
-    G.turn_batch(envs, 32, r.actions, 0, 1, defaultdict(float), tags, id_to_code, rng, defaultdict(float), probe_now=True)
+    def measure(breakers):  # median probe value of the final board, with / without the probe's breakers
+        keep = G.PROBE_BREAKERS; G.PROBE_BREAKERS, G._PROBE = breakers, None
+        seen.clear(); offered_seen.clear()
+        G.turn_batch(envs, 32, r.actions, 0, 1, defaultdict(float), tags, id_to_code, rng, defaultdict(float), probe_now=True)
+        G.PROBE_BREAKERS, G._PROBE = keep, None
+        return float(np.median(seen)) if seen else float("nan")
+    plain = measure(())
+    live = measure(G.PROBE_BREAKERS_ALL)
     G.BELIEF = None if trap == "none" else Belief()
-    live = float(np.median(seen)) if seen else float("nan")
     _, _, info = G.current_state(envs, 32, r.actions)
     opp_hand = [nm(c) for c in info["hand_codes_"][0][1] if c]
     trap_used = trap != "none" and not any(n not in ("Card Trooper", "Upstart Goblin") for n in opp_hand)
     board = [("(set) " if c < 0 else "") + nm(c) for c in info["field_codes_"][0][0] if c]
     vals.append(live)
     used = f" | {trap} used: {trap_used}" if trap != "none" else ""
-    print(f"{deck} deal {g}: live {live:.2f}{used} | hand {hand0} | board {board} | responded {offered_seen[0] if offered_seen else []}", flush=True)
+    print(f"{deck} deal {g}: live {live:.2f} (no breaker {plain:.2f}){used} | hand {hand0} | board {board} | responded {offered_seen[0] if offered_seen else []}", flush=True)
 print(f"{'S1' if trap == 'none' else 'S2 ' + trap} {deck}: mean live interruptions {np.nanmean(vals):.2f} over {len(vals)} deals")

@@ -58,6 +58,8 @@ def merge_db():
 # negates (Crystal Wing, omni-negates) respond only to effect activations, not to summons or spells.
 FILLER = "Card Trooper"
 PROBE_SPELL = "Upstart Goblin"
+# Breakers the board probe opens with (game.py start_probe): one monster-side, one backrow-side.
+PROBE_BREAKERS = ["Dark Ruler No More", "Harpie's Feather Duster"]
 HAND_TRAP_SETS = {
     "none": [],
     "ash": ["Ash Blossom & Joyous Spring"],
@@ -70,6 +72,7 @@ HAND_TRAP_SETS = {
     "fuwalos": ["Mulcharmy Fuwalos"],
     "purulia": ["Mulcharmy Purulia"],
     "evenly": ["Evenly Matched"],
+    "drnm": ["Dark Ruler No More"],  # breaker test (probe staging vs a natively drawn card)
 }
 
 
@@ -114,6 +117,9 @@ def copy_decks(all_ids):
     # (tokens, cards whose code changes). '_'-prefixed decks are preloaded but never played.
     with open(f"{out}/_all.ydk", "w") as f:
         f.write("#main\n" + "\n".join(map(str, all_ids)) + "\n#extra\n!side\n")
+    con = sqlite3.connect(f"{RUN}/cards.cdb")  # probe-only cards must be in the code list too
+    codes |= {con.execute("select id from texts where name = ? order by id limit 1", (n,)).fetchone()[0]
+              for n in PROBE_BREAKERS + [FILLER, PROBE_SPELL]}
     with open(f"{RUN}/code_list.txt", "w") as f:
         f.write("\n".join(map(str, sorted(codes))) + "\n")
     n_p2 = write_p2_decks(out)

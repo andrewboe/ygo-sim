@@ -215,17 +215,27 @@ PROBE_EVAL = True
 _PROBE = None
 
 
-def probe_cards(id_to_code) -> tuple[int, int, int, int]:
-    """(filler code-list id, spell code-list id, filler passcode, spell passcode)."""
+PROBE_BREAKERS_ALL = ("Dark Ruler No More", "Harpie's Feather Duster")  # as setup_runtime.PROBE_BREAKERS
+# Search rollouts probe without breakers: an A/B on 5 deals showed no gain and search variance
+# swamped it (docs/reviews/2026-10-09-breaker-probe.md). The suite still measures boards with them.
+PROBE_BREAKERS = ()
+
+
+def probe_cards(id_to_code) -> tuple:
+    """(filler code-list id, spell code-list id, filler passcode, spell passcode,
+    [(breaker code-list id, breaker passcode), ...])."""
     global _PROBE
     if _PROBE is None:
         import sqlite3
         db = sqlite3.connect(os.path.expanduser("~/ygo/run/cards.cdb"))
-        code = dict((n, c) for c, n in db.execute(
-            "select id, name from texts where name in ('Card Trooper', 'Upstart Goblin')"))
+        names = ("Card Trooper", "Upstart Goblin") + PROBE_BREAKERS
+        code = {}
+        for c, n in db.execute(f"select id, name from texts where name in ({','.join('?' * len(names))}) order by id desc",
+                               names):
+            code[n] = c  # lowest id (the original printing) wins
         index = {c: i for i, c in enumerate(id_to_code) if c}
         f, s = code["Card Trooper"], code["Upstart Goblin"]
-        _PROBE = (index[f], index[s], f, s)
+        _PROBE = (index[f], index[s], f, s, [(index[code[b]], code[b]) for b in PROBE_BREAKERS])
     return _PROBE
 
 
@@ -238,33 +248,59 @@ def probe_step(info, i, n, kinds, st, opp, probe) -> int:
     if int(info["to_play"][i]) == opp:
         if int(info["msg"][i]) == IDLE:
             st["armed"] = False
-            for key, act, card in (("summoned", ord("s"), probe[0]), ("effected", ord("v"), probe[0]),
-                                   ("activated", ord("v"), probe[1])):
+            for key, act, card in (("broken", ord("v"), st["breaker"]), ("summoned", ord("s"), probe[0]),
+                                   ("effected", ord("v"), probe[0]), ("activated", ord("v"), probe[1])):
                 if not st[key]:
                     st[key] = True
                     hit = np.flatnonzero((acts_ == act) & (cards == card))
                     if len(hit):
-                        st["armed"] = True
+                        st["armed"], st["stage"] = True, key
+                        st["breaker_used"] = st.get("breaker_used", False) or key == "broken"
                         return int(hit[0])
             st["finished"] = True
             ends, phases = np.flatnonzero(kinds == KIND_END), np.flatnonzero(kinds == KIND_PHASE)
             return int(ends[0]) if len(ends) else int(phases[0]) if len(phases) else 0
         return int(passes[0]) if len(passes) else 0
     if int(info["msg"][i]) == CHAIN and st["armed"]:
-        st["offered"].update(int(c) for o, c in enumerate(cards) if kinds[o] != KIND_PASS and c)
+        if st["stage"] == "broken" and st["breaker_code"] in set(int(c) for c in info["public_codes_"][i].ravel()):
+            st["stage"] = "resolved"  # the breaker resolved (in the GY): later responses don't answer it
+        st["breaker_offered" if st["stage"] == "broken" else "offered"].update(
+            int(c) for o, c in enumerate(cards) if kinds[o] != KIND_PASS and c)
     return int(passes[0]) if len(passes) else 0
+
+
+_IS_MONSTER = None
+
+
+def pick_breaker(board, breakers, tags):
+    """The breaker the opponent would pick: Dark Ruler No More (face-up monsters) when the board's
+    interruption value sits mostly on face-up monsters, else Harpie's Feather Duster (Spells/Traps).
+    Deterministic per board: alternating by rollout made scores noisy, and NRPA chased lucky rollouts."""
+    global _IS_MONSTER
+    if _IS_MONSTER is None:
+        import sqlite3
+        db = sqlite3.connect(os.path.expanduser("~/ygo/run/cards.cdb"))
+        _IS_MONSTER = {c: bool(t & 0x1) for c, t in db.execute("select id, type from datas")}
+    mon = sum(tags.get(int(c), {}).get("field", 0.0) for c in board if int(c) > 0 and _IS_MONSTER.get(int(c)))
+    st = sum(tags.get(abs(int(c)), {}).get("set" if int(c) < 0 else "field", 0.0) for c in board
+             if int(c) and not _IS_MONSTER.get(abs(int(c)), True))
+    return breakers[0] if mon >= st or len(breakers) < 2 else breakers[1]
 
 
 def start_probe(probing, i, info, player, tags, id_to_code) -> None:
     """Snapshot the searcher's position and stage the opponent's probe hand (applied by a re-deal)."""
     opp = 1 - player
     pr = probe_cards(id_to_code)
-    probing[i] = {"features": features(info, i, player, tags), "redeal": True,
+    breaker = pick_breaker(info["field_codes_"][i][player], pr[4], tags) if pr[4] else (-1, 0)
+    probing[i] = {"features": features(info, i, player, tags), "redeal": True, "breaker": breaker[0],
+                  "negates_monsters": bool(pr[4]) and breaker == pr[4][0], "breaker_code": breaker[1],
+                  "broken": False, "stage": None, "breaker_offered": set(),
                   "board": np.array(info["field_codes_"][i][player]).copy(),
                   "hand": np.array(info["hand_codes_"][i][player]).copy(),
                   "summoned": False, "effected": False, "activated": False, "armed": False, "finished": False,
                   "offered": set()}
-    stage_hidden(int(i), [opp, LOC_HAND, 0, pr[2], opp, LOC_HAND, 1, pr[3]])
+    stage_hidden(int(i), [opp, LOC_HAND, 0, pr[2], opp, LOC_HAND, 1, pr[3]] +
+                 ([opp, LOC_HAND, 2, breaker[1]] if breaker[1] else []))
 
 
 def live_value(board, hand, offered, tags, id_to_code) -> float:
@@ -278,6 +314,37 @@ def live_value(board, hand, offered, tags, id_to_code) -> float:
             t = tags.get(code, {})
             total += max(0.5, t.get("set" if on_field[code] else "field", 0.0))
     return total
+
+
+_NEGATERS = None
+
+
+def negaters() -> set:
+    """Passcodes whose text can negate something: the responses that can stop a breaker."""
+    global _NEGATERS
+    if _NEGATERS is None:
+        import sqlite3
+        db = sqlite3.connect(os.path.expanduser("~/ygo/run/cards.cdb"))
+        _NEGATERS = {c for c, d in db.execute("select id, desc from texts") if d and "negate" in d.lower()}
+    return _NEGATERS
+
+
+def probe_value(st, tags, id_to_code) -> float:
+    """Board value from one probe that opened with a breaker (gap_analysis #1). Half: every live
+    interruption (no breaker); half: the better of answering the breaker (one interruption spent) or
+    letting it resolve (what still responded afterwards). Rewards boards that survive a breaker."""
+    every = live_value(st["board"], st["hand"], st["offered"] | st["breaker_offered"], tags, id_to_code)
+    later = st["offered"]
+    if st.get("negates_monsters"):
+        # Dark Ruler No More negates face-up monsters for the turn, but the engine still offers some of
+        # their Quick Effects afterwards (Elfnote's, unexplained: docs/reviews/2026-10-09-breaker-probe.md),
+        # so drop face-up monsters from what responded after it.
+        faceup = {int(c) for c in st["board"] if int(c) > 0 and _IS_MONSTER.get(int(c))}
+        later = {c for c in later if not (0 < c < len(id_to_code) and id_to_code[c] in faceup)}
+    after = live_value(st["board"], st["hand"], later, tags, id_to_code)
+    negs = {c for c in st["breaker_offered"] if 0 < c < len(id_to_code) and id_to_code[c] in negaters()}
+    answer = live_value(st["board"], st["hand"], negs, tags, id_to_code) > 0  # a response that can stop it
+    return 0.5 * every + 0.5 * max(after, every - 1.0 if answer else after)
 
 
 _DRAW_TRAPS = None
@@ -342,18 +409,32 @@ def search_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, r
     """Co-evolved search of one turn. The turn player's policy adapts toward its best rollout so far
     (NRPA); the responder's policy adapts toward each batch's worst rollout for the turn player, so
     the turn player can't win by exploiting a fixed responder rule (e.g. baiting out a negate)."""
-    weights, resp_weights = defaultdict(float), defaultdict(float)
-    best = TurnRollout()
-    batch = []
-    for _ in range(gens):
-        batch = turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, resp_weights,
-                           belief=BELIEF, decider=player)
-        top = max(batch, key=lambda r: r.score)
-        if top.score > best.score:
-            best = top
-        adapt(weights, best, alpha)
-        worst = min(batch, key=lambda r: r.score)
-        adapt(resp_weights, TurnRollout(trace=worst.resp_trace), alpha)
+    # Big budgets (opening turns) run as independent restarts and keep the best: one long run often
+    # locked onto "end the turn" early (partial combos score below an empty field that keeps a Mulcharmy
+    # live), and never found a 4-interruption board the same hand builds on other seeds.
+    # Successive halving: short independent restarts, then the best one keeps searching (depth).
+    restarts = RESTARTS if gens >= RESTARTS * MIN_RESTART_GENS else 1
+    explore = gens * 3 // (5 * restarts) if restarts > 1 else gens
+
+    def run(weights, resp_weights, run_best, n):
+        for _ in range(n):
+            batch = turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, resp_weights,
+                               belief=BELIEF, decider=player)
+            top = max(batch, key=lambda r: r.score)
+            if top.score > run_best.score:
+                run_best = top
+            adapt(weights, run_best, alpha)
+            worst = min(batch, key=lambda r: r.score)
+            adapt(resp_weights, TurnRollout(trace=worst.resp_trace), alpha)
+        return run_best
+
+    runs = []
+    for _ in range(restarts):
+        w, rw = defaultdict(float), defaultdict(float)
+        runs.append((run(w, rw, TurnRollout(), explore), w, rw))
+    best, weights, resp_weights = max(runs, key=lambda x: x[0].score)
+    if restarts > 1:
+        best = run(weights, resp_weights, best, gens - explore * restarts)
     # Return both learned policies and the turn player's moves in its best line (not the rollout's
     # transcript: that would also commit the responder's sampled, possibly self-destructive actions,
     # AUDIT.md item 1). The real turn follows those moves while they stay available (play_turn).
@@ -479,7 +560,7 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
                 if term[j] or trunc[j] or st["finished"] or int(step["turn"][j]) > turn + 1:
                     active[i] = False
                     f = dict(st["features"])
-                    f["own_tagged"] = live_value(st["board"], st["hand"], st["offered"], tags, id_to_code)
+                    f["own_tagged"] = probe_value(st, tags, id_to_code)
                     out[i].score = score_features(f)
                 continue
             if len(out[i].actions) <= len(history):
@@ -504,6 +585,7 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
 
 MAX_REPLANS = 4
 OPENING_BOOST = 3    # search budget multiplier for turns 1-2
+RESTARTS, MIN_RESTART_GENS = 3, 8  # search_turn: independent NRPA runs when the budget allows
 MAX_WINDOWS = 10     # hand-trap timing comparisons per real turn
 WINDOW_LOG = []      # every timing comparison of the real game (inspection; play_game --verbose prints them)
 REPLAN_LOG = []      # every re-plan of the real game
