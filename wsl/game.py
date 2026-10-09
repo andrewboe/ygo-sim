@@ -78,12 +78,18 @@ def features(info, i, p, tags) -> dict:
     """Position features for player p (end of p's turn)."""
     lp = info["lp_"][i]
     f = {"bias": 1.0, "lp_diff_k": (int(lp[p]) - int(lp[1 - p])) / 1000.0, "went_first": float(p == 0)}
+    # Interruption values count once per card name: nearly every interruption is once per turn by name
+    # (three Elfnote Lucina still give one bounce; two Ash still one negate), and counting copies made
+    # piles of duplicate bodies outscore real end boards. Card counts still count every copy.
     for side, name in ((p, "own"), (1 - p, "opp")):
         codes = [int(c) for c in info["field_codes_"][i][side] if c]
         f[f"{name}_field"] = float(len(codes))
-        f[f"{name}_tagged"] = sum(tags.get(abs(c), {}).get("set" if c < 0 else "field", 0.0) for c in codes)
+        best = {}
+        for c in codes:
+            best[abs(c)] = max(best.get(abs(c), 0.0), tags.get(abs(c), {}).get("set" if c < 0 else "field", 0.0))
+        f[f"{name}_tagged"] = sum(best.values())
         f[f"{name}_hand"] = float(sum(1 for c in info["hand_codes_"][i][side] if c))
-    f["own_hand_traps"] = sum(tags.get(int(c), {}).get("hand", 0.0) for c in info["hand_codes_"][i][p] if c)
+    f["own_hand_traps"] = sum(tags.get(c, {}).get("hand", 0.0) for c in {int(c) for c in info["hand_codes_"][i][p] if c})
     return f
 
 
