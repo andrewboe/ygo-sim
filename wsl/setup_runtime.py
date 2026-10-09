@@ -69,6 +69,7 @@ HAND_TRAP_SETS = {
     "ash-imperm": ["Ash Blossom & Joyous Spring", "Infinite Impermanence"],
     "fuwalos": ["Mulcharmy Fuwalos"],
     "purulia": ["Mulcharmy Purulia"],
+    "evenly": ["Evenly Matched"],
 }
 
 

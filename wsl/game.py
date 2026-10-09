@@ -638,7 +638,7 @@ def main():
     envs = ygoenv.make(task_id="EDOPro-v0", env_type="gymnasium", num_envs=args.rollouts,
                        num_threads=args.rollouts, seed=0, deck1=args.first, deck2=args.second, player=-1,
                        max_options=MAX_OPTIONS, n_history_actions=16, play_mode="self", lite=True,
-                       duel_seed=args.seed)
+                       duel_seed=args.seed, shuffle2=not args.second.startswith("_p2__"))  # stacked test decks
     import json
     os.makedirs(os.path.dirname(WEIGHTS_FILE), exist_ok=True)
     pos_log = open(os.path.join(os.path.dirname(WEIGHTS_FILE), "positions.jsonl"), "a")

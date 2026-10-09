@@ -49,7 +49,8 @@ def replay(rec, names, tags, id_to_code, db):
     """Step through rec['history']; return (log lines, flags)."""
     envs = ygoenv.make(task_id="EDOPro-v0", env_type="gymnasium", num_envs=1, num_threads=1, seed=0,
                        deck1=rec["first"], deck2=rec["second"], player=-1, max_options=MAX_OPTIONS,
-                       n_history_actions=16, play_mode="self", lite=True, duel_seed=rec["seed"])
+                       n_history_actions=16, play_mode="self", lite=True, duel_seed=rec["seed"],
+                       shuffle2=not rec["second"].startswith("_p2__"))
     set_opening(rec["game"])
     _, info = envs.reset()
     nm = lambda code: names.get(abs(int(code)), str(code))
