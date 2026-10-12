@@ -101,11 +101,15 @@ def features(info, i, p, tags) -> dict:
     f["own_threat"] = float(len(up & threat))
     # Dead while you control a card, but the field may clear by a later turn: a quarter of their value,
     # so holding one beats setting it face-down (Mitsurugi Yummy set Mulcharmy Fuwalos on a tie).
+    # Draw-on-summon traps (Mulcharmys) count once: only one Mulcharmy can be activated per turn, so a
+    # second one in hand isn't a second interruption (Magistus held two and ended on an empty board).
+    hand = {int(c) for c in info["hand_codes_"][i][p] if c}
+    draws = sorted((c for c in hand if c in draw_traps()), key=lambda c: -tags.get(c, {}).get("hand", 0.0))
+    hand -= set(draws[1:])
     f["own_hand_traps"] = sum(tags.get(c, {}).get("hand", 0.0) * (DEAD_EMPTY_TRAP if own_cards and c in needs_empty_field() else 1.0)
-                              for c in {int(c) for c in info["hand_codes_"][i][p] if c})
+                              for c in hand)
     # (not a weighted feature) the part of own_hand_traps that only counts while the field is empty
-    f["_empty_traps"] = 0.0 if own_cards else sum(tags.get(c, {}).get("hand", 0.0) for c in
-                                                  {int(c) for c in info["hand_codes_"][i][p] if c} if c in needs_empty_field())
+    f["_empty_traps"] = 0.0 if own_cards else sum(tags.get(c, {}).get("hand", 0.0) for c in hand if c in needs_empty_field())
     return f
 
 
