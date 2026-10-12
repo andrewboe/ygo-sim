@@ -55,6 +55,7 @@ class TurnRollout:
     resp_trace: list = field(default_factory=list)  # responder's decisions at response windows
     actions: list = field(default_factory=list)  # full history incl. the forced prefix
     score: float = float("-inf")
+    true_score: float = float("-inf")             # unshaped evaluation (score may be shaped: turn_batch)
     ended: bool = False                           # game over during this turn
     winner: int = -1
     unseen_at: int | None = None                  # greedy play stopped here: a choice search never saw
@@ -100,6 +101,9 @@ def features(info, i, p, tags) -> dict:
     f["own_threat"] = float(len(up & threat))
     f["own_hand_traps"] = sum(tags.get(c, {}).get("hand", 0.0) for c in {int(c) for c in info["hand_codes_"][i][p] if c}
                               if not (own_cards and c in needs_empty_field()))
+    # (not a weighted feature) the part of own_hand_traps that only counts while the field is empty
+    f["_empty_traps"] = 0.0 if own_cards else sum(tags.get(c, {}).get("hand", 0.0) for c in
+                                                  {int(c) for c in info["hand_codes_"][i][p] if c} if c in needs_empty_field())
     return f
 
 
@@ -202,8 +206,11 @@ def evaluate(info, i, p, tags, id_to_code) -> float:
     return score_features(features(info, i, p, tags))
 
 
-def score_features(f: dict) -> float:
-    return sum(EVAL_WEIGHTS.get(k, 0.0) * v for k, v in f.items())
+def score_features(f: dict, shaped: bool = False) -> float:
+    """shaped: without the value of empty-field hand traps (search_turn): that bonus made every partial
+    combo score below doing nothing, so search locked onto ending the turn (docs/reviews/2026-10-12-...)."""
+    s = sum(EVAL_WEIGHTS.get(k, 0.0) * v for k, v in f.items() if not k.startswith("_"))
+    return s - EVAL_WEIGHTS.get("own_hand_traps", 0.0) * f.get("_empty_traps", 0.0) if shaped else s
 
 
 # Board probe (THEORY §3, as in stage 1): at the end of the searcher's turn in a rollout, the opponent's
@@ -419,7 +426,8 @@ def search_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, r
     def run(weights, resp_weights, run_best, n):
         for _ in range(n):
             batch = turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, resp_weights,
-                               belief=BELIEF, decider=player)
+                               belief=BELIEF, decider=player, shaped=True)
+            best_true[0] = max(batch + [best_true[0]], key=lambda r: r.true_score)
             top = max(batch, key=lambda r: r.score)
             if top.score > run_best.score:
                 run_best = top
@@ -428,6 +436,7 @@ def search_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, r
             adapt(resp_weights, TurnRollout(trace=worst.resp_trace), alpha)
         return run_best
 
+    best_true = [TurnRollout()]  # best line by the real evaluation (e.g. end the turn holding a Mulcharmy)
     runs = []
     for _ in range(restarts):
         w, rw = defaultdict(float), defaultdict(float)
@@ -438,13 +447,15 @@ def search_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, r
     # Return both learned policies and the turn player's moves in its best line (not the rollout's
     # transcript: that would also commit the responder's sampled, possibly self-destructive actions,
     # AUDIT.md item 1). The real turn follows those moves while they stay available (play_turn).
+    if best_true[0].true_score > best.true_score:
+        best = best_true[0]  # the shaped search's best line is really worse: play the unshaped best
     plan = tuple(h[c] for h, _, c in best.trace)
     return weights, resp_weights, plan
 
 
 def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, resp_weights=None,
                greedy=False, stop_unseen=False, stop_windows=False, first_actions=None, belief=None,
-               decider=None, held_windows=frozenset(), plan=(), probe_now=False) -> list[TurnRollout]:
+               decider=None, held_windows=frozenset(), plan=(), probe_now=False, shaped=False) -> list[TurnRollout]:
     """K rollouts: replay `history`, then `player` plays turn `turn` by softmax policy (greedy: each
     player takes its policy's most likely choice, no exploration; stop_unseen: stop at the first
     turn-player choice between 2+ actions that the search never visited, for re-planning;
@@ -561,7 +572,7 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
                     active[i] = False
                     f = dict(st["features"])
                     f["own_tagged"] = probe_value(st, tags, id_to_code)
-                    out[i].score = score_features(f)
+                    out[i].score, out[i].true_score = score_features(f, shaped), score_features(f)
                 continue
             if len(out[i].actions) <= len(history):
                 continue
@@ -573,13 +584,15 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
                 if out[i].winner == -1 and rew[j] != 0:  # deck-out etc.: from the last mover's reward
                     out[i].winner = int(last_actor[i]) if rew[j] > 0 else 1 - int(last_actor[i])
                 out[i].score = WIN if out[i].winner == player else 0.0 if out[i].winner == -1 else -WIN
+                out[i].true_score = out[i].score
             elif int(step["turn"][j]) > turn:
                 opp = 1 - player
                 if PROBE_EVAL and not greedy and int(info["board_"][i][opp][2]) >= 2:
                     start_probe(probing, i, info, player, tags, id_to_code)
                 else:
                     active[i] = False
-                    out[i].score = evaluate(info, i, player, tags, id_to_code)
+                    f = features(info, i, player, tags)
+                    out[i].score, out[i].true_score = score_features(f, shaped), score_features(f)
     return out
 
 

@@ -38,7 +38,7 @@ for g in range(first, first + n_deals):
     set_opening(g); rng = np.random.default_rng(g + 1000003 * int(os.environ.get("SEARCH_SEED", 0)))
     _, info0 = envs.reset()
     hand0 = [nm(c) for c in info0["hand_codes_"][0][0] if c]
-    r = G.play_turn(envs, 32, [], 0, 1, 30, 1.0, tags, id_to_code, rng)
+    r = G.play_turn(envs, 32, [], 0, 1, int(os.environ.get("TURN1_GENS", 30)), 1.0, tags, id_to_code, rng)
     G.BELIEF = None  # measure the real board only
     from collections import defaultdict
     def measure(breakers):  # median probe value of the final board, with / without the probe's breakers
