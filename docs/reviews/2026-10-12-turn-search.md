@@ -22,3 +22,19 @@ Elfnote 203622 (Ghost Belle, Power Patron, Harmonia, Fuwalos, Vidolium) was call
 verdict was wrong.
 
 Still open: per-deal variance is about 1 interruption, so board comparisons need several deals.
+
+## Full suite after the changes (2026-10-12; 60 gens, shaped search, dead-trap value)
+S1, 3 deals per deck, mean live interruptions without the breaker (2026-10-09 baseline in brackets;
+same per-deck deal seeds, though the old pilot may have drawn the same hands differently):
+Branded 2.33 (1.67), Maliss 2.25 (1.75), Invoked 2.17 (1.00), Elfnote 2.00 (1.17), DM Chaos Ritual
+1.83 (1.92), Chaos Ritual 1.75 (0.50), Lunalight 1.67 (1.00), Mitsurugi Yummy 1.58 (3.17),
+Sky Striker 1.50 (1.67), Mitsurugi 1.42 (0.33), Magistus 1.00 (0.83), Blitzclique 0.92 (1.00).
+Field mean 1.69 (1.33). Empty boards: Blitzclique 288942 and Magistus 240051 (not yet checked as bricks).
+S2 into Ash (95000 / 95001, no breaker): Elfnote 1.00 / 3.75 (was 3.25 / 2.75), DM 0.00 / 1.25
+(was 0.00 / 2.00), Mitsurugi Yummy 1.25 / 3.00 (unchanged). Ash was used only in DM 95000, which
+still ends on Relinquished Anima alone after Ash.
+
+Open:
+- DM into Ash, deal 95000: no recovery line (0 both times).
+- Mitsurugi Yummy S1 dropped (3.17 to 1.58). Check whether the 2026-10-09 hands match today's.
+- Check the two empty boards for real bricks (203622 was not one).
