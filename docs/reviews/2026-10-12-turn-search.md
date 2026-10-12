@@ -38,3 +38,15 @@ Open:
 - DM into Ash, deal 95000: no recovery line (0 both times).
 - Mitsurugi Yummy S1 dropped (3.17 to 1.58). Check whether the 2026-10-09 hands match today's.
 - Check the two empty boards for real bricks (203622 was not one).
+
+## Follow-ups (2026-10-12)
+- Like-for-like on the 2026-10-09 deals (94000-94002): field mean 1.85 vs 1.33 (+39%). Mitsurugi Yummy
+  3.08 vs 3.17: the earlier "drop" was different hands. Magistus 0.83 to 2.50, Sky Striker 1.67 to 2.92;
+  no deck worse beyond noise.
+- Empty boards: Blitzclique 288942 is a true brick (Surge needs a monster to target, Whisker needs a
+  destruction, Dominus Purge needs an opponent's card). Magistus 240051 was an evaluation bug: two
+  different Mulcharmys counted as two interruptions, but only one can be activated per turn. Now
+  Mulcharmys count once; that hand builds 7 cards (1.50). Other Mulcharmy hands are unchanged.
+- DM into Ash 95000 (Black Chaos, WANTED, Magicians' Souls, Fuwalos, Hallowed Azamina; Ash on
+  WANTED): ends on Relinquished Anima. Possible lines via Souls (send DM, revive it) are unclear
+  to me; needs a human check.
