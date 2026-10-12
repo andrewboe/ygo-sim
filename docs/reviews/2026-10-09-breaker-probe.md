@@ -43,7 +43,7 @@ collapses. On two other deals it was neutral (203620: 3.50 / 1.75 / 1.50; Mitsur
 2.25 / 2.75 / 1.75, vs about 2.5 and 2.4 single-run). Variance is still about 1 interruption per deal.
 
 Open, by priority:
-1. Turn-1 search variance: more budget, or better rollout priors for combo depth. It dominates every
+1. Turn-1 search variance (2026-10-12: shaped search + 2x budget, docs/reviews/2026-10-12-turn-search.md). It dominates every
    board-quality comparison at this sample size.
-2. The DRNM / Elfnote engine anomaly.
-3. Mitsurugi Yummy seed 2 set Mulcharmy Fuwalos (a hand-trap monster) despite the hint.
+2. DRNM / Elfnote: explained 2026-10-12. EDOPro (like ygopro) lets a negated monster activate its effect and negates it on resolution (processor.cpp, is_chain_disabled / STATUS_DISABLED), so "offered" is not "live". The probe drops face-up monsters after DRNM, which is the right correction; real games are unaffected.
+3. Mitsurugi Yummy set Mulcharmy Fuwalos: fixed 2026-10-12 (dead empty-field hand traps keep 0.25 of their value in hand).

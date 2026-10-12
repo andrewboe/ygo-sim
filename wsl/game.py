@@ -99,14 +99,17 @@ def features(info, i, p, tags) -> dict:
     up = {abs(int(c)) for c in info["field_codes_"][i][p] if c and c > 0}  # face-up, once per name
     f["own_protected"] = float(len(up & prot))
     f["own_threat"] = float(len(up & threat))
-    f["own_hand_traps"] = sum(tags.get(c, {}).get("hand", 0.0) for c in {int(c) for c in info["hand_codes_"][i][p] if c}
-                              if not (own_cards and c in needs_empty_field()))
+    # Dead while you control a card, but the field may clear by a later turn: a quarter of their value,
+    # so holding one beats setting it face-down (Mitsurugi Yummy set Mulcharmy Fuwalos on a tie).
+    f["own_hand_traps"] = sum(tags.get(c, {}).get("hand", 0.0) * (DEAD_EMPTY_TRAP if own_cards and c in needs_empty_field() else 1.0)
+                              for c in {int(c) for c in info["hand_codes_"][i][p] if c})
     # (not a weighted feature) the part of own_hand_traps that only counts while the field is empty
     f["_empty_traps"] = 0.0 if own_cards else sum(tags.get(c, {}).get("hand", 0.0) for c in
                                                   {int(c) for c in info["hand_codes_"][i][p] if c} if c in needs_empty_field())
     return f
 
 
+DEAD_EMPTY_TRAP = 0.25
 _NEEDS_EMPTY = None
 _BOARD_TRAITS = None
 
