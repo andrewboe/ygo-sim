@@ -597,7 +597,7 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
 
 
 MAX_REPLANS = 4
-OPENING_BOOST = 3    # search budget multiplier for turns 1-2
+OPENING_BOOST = 6    # search budget multiplier for turns 1-2 (6 = 60 gens: +19% live interruptions over 3, 2026-10-12)
 RESTARTS, MIN_RESTART_GENS = 3, 8  # search_turn: independent NRPA runs when the budget allows
 MAX_WINDOWS = 10     # hand-trap timing comparisons per real turn
 WINDOW_LOG = []      # every timing comparison of the real game (inspection; play_game --verbose prints them)
