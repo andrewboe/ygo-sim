@@ -62,6 +62,7 @@ class TurnRollout:
     window_at: int | None = None                  # greedy play stopped here: a hand-trap timing window
     window_options: list = field(default_factory=list)
     window_cards: list = field(default_factory=list)  # passcode per window option (0 = pass)
+    window_trigger: int = 0                        # card of the turn player's play being responded to
     off_plan: bool = False                         # greedy play left the search's best line
 
 
@@ -478,6 +479,7 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
     out = [TurnRollout() for _ in range(k)]
     active = np.ones(k, dtype=bool)
     last_turn_act = np.zeros(k, dtype=int)
+    last_turn_card = np.zeros(k, dtype=int)  # code-list id of the turn player's last action's card
     last_actor = np.zeros(k, dtype=int)  # env reward is relative to whoever made the last move
     redealt = np.zeros(k, dtype=bool)
     plan_pos = np.zeros(k, dtype=int)
@@ -537,11 +539,14 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
                     acts[i], _ = sample(hashes, priors, weights, rng)
                 out[i].trace.append((hashes, priors, int(acts[i])))
                 last_turn_act[i] = int(info["option_act_"][i][acts[i]])
+                last_turn_card[i] = int(info["option_card_"][i][acts[i]])
             elif stop_windows and (kinds == KIND_PASS).any() and \
                     (live := live_interruptions(info, i, n, kinds, tags, id_to_code)):
                 cid = lambda o: int(info["option_card_"][i][o])
                 cards = [0] + [id_to_code[cid(o)] if 0 < cid(o) < len(id_to_code) else 0 for o in live]
-                if tuple(sorted(cards)) in held_windows:  # already judged "hold" this turn: pass inline
+                # Held = judged "hold" this turn for these cards *against this play*: a later play (Branded
+                # Fusion after the held window on The Fallen & The Virtuous) gets its own evaluation.
+                if (tuple(sorted(cards)), int(last_turn_card[i])) in held_windows:
                     acts[i] = int(np.flatnonzero(kinds == KIND_PASS)[0])
                     last_actor[i] = int(info["to_play"][i])
                     out[i].actions.append(int(acts[i]))
@@ -549,6 +554,7 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
                 out[i].window_at = len(out[i].actions)
                 out[i].window_options = [int(np.flatnonzero(kinds == KIND_PASS)[0])] + live
                 out[i].window_cards = cards
+                out[i].window_trigger = int(last_turn_card[i])
                 active[i] = False
                 continue
             elif resp_weights is not None and int(info["msg"][i]) == CHAIN and \
@@ -672,7 +678,7 @@ def play_turn(envs, k, history, player, turn, gens, alpha, tags, id_to_code, rng
             done_moves += len(r.trace)  # the turn player's moves played before this stop
             if r.off_plan:
                 plan = ()
-            key = tuple(sorted(r.window_cards))
+            key = (tuple(sorted(r.window_cards)), r.window_trigger)
             windows += 1
             draws = [o for o, c in zip(r.window_options[1:], r.window_cards[1:]) if c in draw_traps()]
             if draws:  # Mulcharmys / Maxx "C": only worth anything before the summons, so use at once
