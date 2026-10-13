@@ -613,6 +613,7 @@ MAX_REPLANS = 4
 OPENING_BOOST = 6    # search budget multiplier for turns 1-2 (6 = 60 gens: +19% live interruptions over 3, 2026-10-12)
 RESTARTS, MIN_RESTART_GENS = 3, 8  # search_turn: independent NRPA runs when the budget allows
 MAX_WINDOWS = 10     # hand-trap timing comparisons per real turn
+WINDOW_BATCHES = int(os.environ.get("WINDOW_BATCHES", 3))  # rollout batches per timing comparison
 WINDOW_LOG = []      # every timing comparison of the real game (inspection; play_game --verbose prints them)
 REPLAN_LOG = []      # every re-plan of the real game
 WINDOW_OPTIONS = 3   # pass + the best tagged interruptions
@@ -637,11 +638,14 @@ def choose_window(envs, k, prefix, options, player, turn, weights, resp_weights,
     re-optimizes around the interruption; means mostly measured exploration noise). Pass is
     options[0] and wins ties."""
     first = [options[i % len(options)] for i in range(k)]
-    batch = turn_batch(envs, k, prefix, player, turn, weights, tags, id_to_code, rng, resp_weights,
-                       first_actions=first, belief=BELIEF, decider=1 - player)
     totals = defaultdict(list)
-    for i, r in enumerate(batch):
-        totals[first[i]].append(r.score)
+    # Several batches: one batch (~10 rollouts per option) missed the attacker's other lethal lines,
+    # while the attacker searches its whole turn with 60 generations.
+    for _ in range(WINDOW_BATCHES):
+        batch = turn_batch(envs, k, prefix, player, turn, weights, tags, id_to_code, rng, resp_weights,
+                           first_actions=first, belief=BELIEF, decider=1 - player)
+        for i, r in enumerate(batch):
+            totals[first[i]].append(r.score)
     mean = {o: float(np.max(v)) for o, v in totals.items()}  # the turn player's best response
     choice = min(options, key=lambda o: (mean.get(o, float("inf")), o != options[0]))
     WINDOW_LOG.append({"turn": turn, "len": len(prefix), "options": options, "mean": mean, "choice": choice})
