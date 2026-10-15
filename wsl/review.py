@@ -93,8 +93,12 @@ def replay(rec, names, tags, id_to_code, db):
         if msg == 10 and me == tp and lethal_checked != cur_turn:  # first battle decision of the turn
             lethal_checked = cur_turn
             opp = 1 - tp
-            opp_monsters = [c for c in info["field_codes_"][0][opp] if c and db.get(abs(int(c)), (0, 0))[0] & TYPE_MONSTER]
-            atk = sum(max(db.get(int(c), (0, 0))[1], 0) for c in info["field_codes_"][0][tp]
+            # field_codes_ packs Monster Zone cards first (board_[p][0] of them), then S/T zones. Only the
+            # Monster Zones attack or block: Pendulum scales (Solfachord) and monsters treated as Spells/Traps
+            # are TYPE_MONSTER too, and counted them as attackers and as blockers that hid real lethal.
+            mzone = lambda p: info["field_codes_"][0][p][:int(info["board_"][0][p][0])]
+            opp_monsters = [c for c in mzone(opp) if c and db.get(abs(int(c)), (0, 0))[0] & TYPE_MONSTER]
+            atk = sum(max(db.get(int(c), (0, 0))[1], 0) for c in mzone(tp)
                       if c > 0 and db.get(int(c), (0, 0))[0] & TYPE_MONSTER)
             if not opp_monsters and atk >= lp[opp]:
                 lethal_watch = (cur_turn, tp, atk, lp[opp])
