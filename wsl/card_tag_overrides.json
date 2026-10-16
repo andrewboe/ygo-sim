@@ -13,5 +13,17 @@
  },
  "Elfnote Regina": {
   "field": 0.0
+ },
+ "Futsu no Mitama no Mitsurugi": {
+  "field": 0.75,
+  "why": "on an opponent's Special Summon revives a Reptile (Murakumo's revival destroys their monsters)"
+ },
+ "Mitsurugi Prayers": {
+  "set": 0.75,
+  "why": "Quick-Play: tributes a Mitsurugi Ritual Monster, which searches and revives itself (Murakumo then destroys their monsters)"
+ },
+ "Ame no Habakiri no Mitsurugi": {
+  "field": 0.25,
+  "why": "not an interruption itself; Level 8 Reptile fuel for Prayers / Great Purification"
  }
 }

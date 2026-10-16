@@ -11,6 +11,7 @@ DECKS = {
     "maliss__tcg": ("maliss", "MalissExecutor"),
     "branded__tcg": ("albaz", "AlbazExecutor"),
     "sky-striker__tcg": ("sky_striker", "SkyStrikerExecutor"),
+    "mitsurugi__tcg": ("mitsurugi", "MitsurugiExecutor"),
 }
 
 

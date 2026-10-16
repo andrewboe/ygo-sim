@@ -38,8 +38,11 @@ mitsurugi 29/42, sky-striker 30/37.
    activating player; `wsl/windbot_gameai.py` ports GameAI (row-major action choice, the AI.Select* stack,
    OnSelectCard / Sum / Tribute / Place / Position / Option / YesNo with WindBot's fallbacks) and replays the
    messages since each decision through the executor's callbacks. Porting guide: docs/windbot_porting.md;
-   registry: `wsl/windbot_decks/__init__.py`. Executors, in coverage order: Elfnote, ChaosRitual, Maliss,
-   SkyStriker, DarkMagician, Ryzeal (Blitzclique builds), then Albaz/Dogmatika rules for Branded.
+   registry: `wsl/windbot_decks/__init__.py`. Ported (rule for rule): Elfnote, ChaosRitual, Maliss, SkyStriker
+   and Albaz (for Branded). Not ported: Ryzeal, DarkMagician, Dogmatika (2-6 shared cards with our lists).
+   WindBot's lists differ from ours (Sky Striker shares 10 of its 37 cards), and six field decks have no
+   WindBot executor, so decks also get executors written from their current lines (docs/windbot_porting.md,
+   "Writing an executor..."): Mitsurugi first.
 4. **Gaps**: Konami-only cards from the specs; cards neither covers stay with the search.
 5. **Validation**: unit tests per executor on built boards, the live firing test, then paired A/Bs big
    enough to mean something (~60 games per arm, overnight), plus review.py flag deltas.

@@ -62,9 +62,11 @@ is False; `IsSpecialSummoned` is False; `LastLocation` is 0; hint descriptions (
 OnNewTurn, OnPosChange, OnSummoning, OnSpSummoned) do arrive, with the chain state of their time but the
 current board.
 
-If the executor needs a helper `windbot.py` doesn't have (an AIUtil / ClientField / CardContainer member),
-write it as a module-level function in the executor file, named as in WindBot, and list it in the port's
-docstring; it moves into `windbot.py` at review.
+Cards compare by place, so a card an executor stored is a different key once it moves. To follow it through
+OnMove, use `FindMovedCard(tracked, card, previousControler, previousLocation)` (match by id and previous
+place). If the executor needs a helper `windbot.py` doesn't have (an AIUtil / ClientField / CardContainer
+member), write it as a module-level function in the executor file, named as in WindBot, and list it in the
+port's docstring; it moves into `windbot.py` at review.
 
 ## Checking a port
 
@@ -74,3 +76,22 @@ wsl.exe -e bash <scratch>/run_test.sh exec_smoke.py <deck> <other deck> 2000 win
 runs self-play where every decision goes through the executor and prints exceptions (deduplicated, with
 tracebacks), how often rows pick, and the top picks. A port is done when the smoke run has no errors on its
 deck against two other decks and the top picks look like the deck's combo cards.
+
+## Writing an executor for a deck WindBot doesn't cover
+
+Same shape as a port (rows in priority order, conditions, OnSelectCard / OnSelectOption / OnSelectYesNo),
+written from the deck's own lines. `wsl/windbot_decks/mitsurugi.py` is the example.
+
+1. **Lines.** Collect the deck's combos from current guides (Master Duel Meta, YGOProDeck, Konami's strategy
+   guides) and the card text (`cards.cdb`), then check what actually works under EDOPro:
+   `python goldfish_lines.py DECK STARTER_IDS` finds openings holding each starter, searches turn 1 hard and
+   prints the best line step by step. Make sure the deck's interruptions are tagged (`card_tag_overrides.json`):
+   goldfish and the game search score boards by those tags.
+2. **Rules.** One step of a line per row, ordered by what should happen first; the conditions say when a
+   step applies (what's in hand, which once-per-turn effects are spent: track them in OnChainSolved). The
+   choices inside a step (which card to search, tribute, revive; which effect at an option prompt) go in
+   OnSelectCard / OnSelectOption, keyed by the solving or activating card and the select hint. Look up effect
+   descriptions with `GetStringId(card, n)`, n = the card's string index in `cards.cdb` (str1 = 0).
+3. **Check.** `exec_smoke.py` for exceptions, then `python executor_ab.py DECK 30 16 5 WATCH_IDS`: the same
+   openings searched with the executor's priors off and on at a small budget. It should raise the mean board
+   and not lose openings. Mitsurugi: 3.02 -> 4.46 interruptions, better in 93% of openings.
