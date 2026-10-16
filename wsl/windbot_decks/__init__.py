@@ -8,6 +8,9 @@ DECKS = {
     "chaos-ritual__tcg": ("chaos_ritual", "ChaosRitualExecutor"),
     "chaos-ritual__projected": ("chaos_ritual", "ChaosRitualExecutor"),
     "chaos-ritual-ocg__projected": ("chaos_ritual", "ChaosRitualExecutor"),
+    "maliss__tcg": ("maliss", "MalissExecutor"),
+    "branded__tcg": ("albaz", "AlbazExecutor"),
+    "sky-striker__tcg": ("sky_striker", "SkyStrikerExecutor"),
 }
 
 
