@@ -1,0 +1,295 @@
+"""Per-card CPU hints: Master Duel's card-specific AI behaviour, as prior offsets (docs/cpu_handlers.md).
+
+Konami's CPU keeps its card knowledge in per-card branches of its think code (switches on card ID).
+Each handler here restates one card's branch as behaviour, keyed by passcode, in the style of
+card_tags / hint_priors (MTG Forge's card AI hints):
+ - @on_option(*codes): scores each option that names the card (activate, summon, chain, attack,
+   effect yes/no). Returns a logit offset: > 0 prefer, < 0 avoid, 0 no opinion.
+ - @on_select(*codes): scores each candidate at a selection prompt (targets, costs, materials) while
+   that card's effect is choosing.
+hint_priors adds the offsets to the turn player's priors (search can still overrule them); respond()
+follows them for the other player, so both players' turns use them. The specs the handlers come from,
+with their Konami evidence, are in cpu_handler_specs.jsonl; how to refresh them: docs/cpu_handlers.md.
+"""
+import os
+from dataclasses import dataclass
+
+import numpy as np
+
+import board
+
+ENABLED = os.environ.get("YGOSIM_CARD_HANDLERS", "0") != "0"
+BATTLECMD, IDLE, EFFECTYN, YESNO, SELECT_CARD, CHAIN, POSITION = 10, 11, 12, 13, 15, 16, 19
+TRIBUTE, SELECT_SUM, UNSELECT_CARD = 20, 23, 26
+SELECTS = (SELECT_CARD, TRIBUTE, SELECT_SUM, UNSELECT_CARD)
+OPTION_MSGS = (BATTLECMD, IDLE, EFFECTYN, YESNO, CHAIN)
+# Offsets for the specs' strengths: "always" outweighs the end/phase priors (-3) and a learned weight
+# of a few points; "usually" is a default search can overturn; "tiebreak" only orders equals.
+ALWAYS, USUALLY, TIEBREAK = 6.0, 2.5, 0.5
+_ON_OPTION: dict = {}
+_ON_SELECT: dict = {}
+
+
+def on_option(*codes):
+    def register(fn):
+        for c in codes:
+            _ON_OPTION[c] = fn
+        return fn
+    return register
+
+
+def on_select(*codes):
+    def register(fn):
+        for c in codes:
+            _ON_SELECT[c] = fn
+        return fn
+    return register
+
+
+@dataclass
+class Ctx:
+    """One option of one decision, from the deciding player's side."""
+    info: dict
+    i: int
+    o: int          # the option being scored
+    msg: int
+    act: str        # option letter: v activate, s summon, c special summon, a attack, h from hand...
+    card: int       # passcode the option names (the candidate, at selection prompts); 0 if none
+    source: int     # passcode of the card whose effect is choosing (selection prompts); 0 if unknown
+    player: int
+    opp_source: int = 0  # passcode of the card the opponent used last (what a chain responds to); 0 if unknown
+
+    @property
+    def opp(self) -> int:
+        return 1 - self.player
+
+    @property
+    def my_turn(self) -> bool:
+        return int(self.info["turn_player"][self.i]) == self.player
+
+    def lp(self, p) -> int:
+        return int(self.info["lp_"][self.i][p])
+
+    def monsters(self, p) -> list:
+        """(passcode, ATK, DEF, position) of p's Monster Zone cards (board.monsters)."""
+        return board.monsters(self.info, self.i, p)
+
+    def field(self, p) -> list:
+        """Passcodes of every card p controls; face-down ones negative."""
+        return [int(c) for c in self.info["field_codes_"][self.i][p] if c]
+
+    def hand(self, p) -> list:
+        return [int(c) for c in self.info["hand_codes_"][self.i][p] if c]
+
+    def printed(self, code) -> tuple:
+        return board.card_stats().get(code, (0, 0))
+
+    def public(self, p) -> list:
+        """Passcodes in p's GY and face-up banished."""
+        return [int(c) for c in self.info["public_codes_"][self.i][p] if c]
+
+    def zone(self, p, code):
+        """Monster Zone slot (0-4 main, 5-6 Extra) of p's monster `code`, or None."""
+        codes = [abs(int(c)) for c in self.info["field_codes_"][self.i][p][:int(self.info["board_"][self.i][p][0])]]
+        slots = [s for s, st in enumerate(self.info["field_stats_"][self.i][p]) if int(st[2])]
+        return next((s for c, s in zip(codes, slots) if c == code), None)
+
+    @property
+    def location(self) -> str:
+        """Where a selection candidate is: h hand, m/s own zones, om/os the opponent's, g GY, r banished,
+        x Extra Deck, d Deck (the option string's location letter)."""
+        a = self.act
+        return "d" if a.isdigit() else a
+
+    def candidate_owner(self):
+        """Whose card the candidate is, when it is on the field (None if not on the field)."""
+        for p in (self.player, self.opp):
+            if self.card and self.card in {abs(c) for c in self.field(p)}:
+                return p
+        return None
+
+
+def offsets(info, i, n, id_to_code, source_cid=0, opp_cid=0) -> np.ndarray:
+    """Handler offsets for every option of decision i (zeros when no handler has an opinion)."""
+    out = np.zeros(n)
+    msg = int(info["msg"][i])
+    if not ENABLED:
+        return out
+    if not (msg in OPTION_MSGS or msg in SELECTS):
+        return out
+    code = lambda cid: id_to_code[cid] if 0 < cid < len(id_to_code) else 0
+    source = code(int(source_cid))
+    select = _ON_SELECT.get(source) if msg in SELECTS else None
+    p = int(info["to_play"][i])
+    for o in range(n):
+        ctx = Ctx(info, i, o, msg, chr(int(info["option_act_"][i][o])), code(int(info["option_card_"][i][o])),
+                  source, p, code(int(opp_cid)))
+        if msg in SELECTS:
+            fns = ([select] if select else []) + GENERIC_SELECT
+        else:
+            fns = [_ON_OPTION[ctx.card]] if ctx.card in _ON_OPTION else []
+        out[o] = sum(fn(ctx) or 0.0 for fn in fns)
+    return out
+
+
+# --- Handlers ---------------------------------------------------------------------------------------
+# One per card (or per group sharing a branch), named after the card, with the spec line it implements.
+
+RAYE, ROZE, HORNET_DRONES, ENGAGE = 26077387, 37351133, 52340444, 63166095
+
+
+@on_select(ENGAGE)
+def engage(ctx):
+    """Sky Striker Mobilize - Engage! search: Raye by default; Hornet Drones (which feeds Kagari) when Raye is
+    already in hand or not in the Deck. (spec: Engage!, Raye, Hornet Drones; medium)"""
+    if ctx.msg != SELECT_CARD or ctx.location != "d":
+        return 0.0
+    raye_held = RAYE in ctx.hand(ctx.player)
+    if ctx.card == RAYE and not raye_held:
+        return USUALLY
+    if ctx.card == HORNET_DRONES and raye_held:
+        return USUALLY
+    return 0.0
+
+
+@on_option(102380)
+def lava_golem(ctx):
+    """Lava Golem: summon it onto the opponent's field when they control exactly 2 monsters. (spec: medium)"""
+    return USUALLY if ctx.msg == IDLE and ctx.act == "c" and len(ctx.monsters(ctx.opp)) == 2 else 0.0
+
+
+@on_option(25311006)
+def triple_tactics_talent(ctx):
+    """Triple Tactics Talent: activate as soon as the opponent's Main Phase monster effect makes it live. (medium)"""
+    return USUALLY if ctx.act in "v" else 0.0
+
+
+@on_option(87746184)
+def albion(ctx):
+    """Albion the Branded Dragon: use its End Phase GY trigger (add/Set a Branded Spell/Trap). (medium)"""
+    if ctx.msg in (EFFECTYN, CHAIN) and ctx.act not in ("n", "c") and ctx.card in ctx.public(ctx.player):
+        return USUALLY
+    return 0.0
+
+
+def roze_bonus(ctx):
+    """Sky Striker Ace - Roze in your GY revives when a monster in the Extra Monster Zone leaves: removal effects
+    prefer the opponent's Extra Monster Zone monster. (spec: Roze; medium)"""
+    if ctx.msg == SELECT_CARD and ctx.location == "o" and ROZE in ctx.public(ctx.player) and \
+            ctx.card not in ctx.field(ctx.player):
+        slot = ctx.zone(ctx.opp, ctx.card)
+        return TIEBREAK if slot is not None and slot >= 5 else 0.0
+    return 0.0
+
+
+STARDUST, ACCEL_STARDUST, CHAOS_ANGEL, FRAKTALL, KITT = 44508094, 30983281, 22850702, 87209160, 56196385
+ATTR_LIGHT, ATTR_DARK = 0x10, 0x20
+_CARD_DB = None
+
+
+def card_db() -> dict:
+    """passcode -> (attribute, card text, type)."""
+    global _CARD_DB
+    if _CARD_DB is None:
+        import sqlite3
+        db = sqlite3.connect(os.path.expanduser("~/ygo/run/cards.cdb"))
+        _CARD_DB = {c: (a, d or "", t) for c, a, d, t in
+                    db.execute("select datas.id, attribute, desc, type from datas join texts on datas.id = texts.id")}
+    return _CARD_DB
+
+
+@on_option(STARDUST)
+def stardust_dragon(ctx):
+    """Stardust Dragon: summon it first when the opponent controls a face-up card that destroys. (spec: medium)"""
+    if ctx.msg == IDLE and ctx.act == "c" and any("destroy" in card_db().get(c, (0, ""))[1].lower()
+                                                  for c in ctx.field(ctx.opp) if c > 0):
+        return USUALLY
+    return 0.0
+
+
+@on_select(ACCEL_STARDUST)
+def accel_synchro_stardust(ctx):
+    """Accel Synchro Stardust Dragon's Quick Effect Synchro Summon: bring out Stardust Dragon. (spec: medium)"""
+    return ALWAYS if ctx.card == STARDUST and ctx.location == "x" else 0.0
+
+
+@on_select(CHAOS_ANGEL)
+def chaos_angel(ctx):
+    """Chaos Angel's Synchro Materials: cover LIGHT and DARK. LIGHT first, DARK first when the opponent has a
+    monster at least as strong as your best (DARK gives battle protection). (spec: medium)"""
+    attr = card_db().get(ctx.card, (0, ""))[0]
+    if ctx.msg not in SELECTS or ctx.location not in ("m", "h") or not attr & (ATTR_LIGHT | ATTR_DARK):
+        return 0.0
+    best_own = max((a for _, a, _, _ in ctx.monsters(ctx.player)), default=0)
+    first = ATTR_DARK if max((a for _, a, _, _ in ctx.monsters(ctx.opp)), default=0) >= best_own > 0 else ATTR_LIGHT
+    return USUALLY + (TIEBREAK if attr & first else 0.0)
+
+
+@on_select(FRAKTALL)
+def fraktall(ctx):
+    """Tri-Brigade Fraktall sends Tri-Brigade Kitt from the Deck (its GY effect then searches). (spec: medium)"""
+    return USUALLY if ctx.card == KITT and ctx.location == "d" else 0.0
+
+
+# Bystial Druiswurm, Golden Cloud Beast - Malong, Witch of the Black Forest: effects when sent from the field to the GY
+GY_FODDER = {6637331, 93125329, 78010363}
+
+
+def fodder_bonus(ctx):
+    """Costs, materials and tributes: Konami values sending Druiswurm / Malong from the field (their GY effects).
+    (spec: Bystial Druiswurm; medium)"""
+    return TIEBREAK if ctx.msg in SELECTS and ctx.location == "m" and ctx.card in GY_FODDER else 0.0
+
+
+TYPE_MONSTER, TYPE_SPELL = 0x1, 0x2
+CALLED_BY_THE_GRAVE, HEAVY_POLY, LITTLE_KNIGHT = 24224830, 58570206, 29301450
+SHARK_CANNON, WIDOW_ANCHOR = 51227866, 98338152
+
+
+def card_type(code) -> int:
+    return card_db().get(code, (0, "", 0))[2]
+
+
+@on_option(CALLED_BY_THE_GRAVE)
+def called_by_the_grave(ctx):
+    """Called by the Grave: chain it when the opponent activates a monster effect whose same-name copy is in their
+    GY; otherwise hold it. (spec: high; Crossout Designator shares the branch)"""
+    if ctx.msg != CHAIN or ctx.act in ("c", "n"):
+        return 0.0
+    live = ctx.opp_source and card_type(ctx.opp_source) & TYPE_MONSTER and ctx.opp_source in ctx.public(ctx.opp)
+    return ALWAYS if live else -USUALLY
+
+
+@on_select(CALLED_BY_THE_GRAVE)
+def called_by_the_grave_target(ctx):
+    """...and target the GY copy of the monster just activated."""
+    return ALWAYS if ctx.opp_source and ctx.card == ctx.opp_source else 0.0
+
+
+@on_option(HEAVY_POLY)
+def heavy_polymerization(ctx):
+    """Heavy Polymerization: only with at least 3 materials available, whatever the Fusion needs. (spec: high)"""
+    if ctx.act != "v":
+        return 0.0
+    materials = len(ctx.monsters(ctx.player)) + sum(1 for c in ctx.hand(ctx.player) if card_type(c) & TYPE_MONSTER)
+    return -USUALLY if materials < 3 else 0.0
+
+
+@on_option(LITTLE_KNIGHT)
+def little_knight(ctx):
+    """S:P Little Knight: its banish needs a face-up monster on the opponent's side to be worth it. (spec: medium)"""
+    if ctx.msg in (IDLE, CHAIN) and ctx.act == "v" and not any(pos & 0x5 for _, _, _, pos in ctx.monsters(ctx.opp)):
+        return -ALWAYS
+    return 0.0
+
+
+@on_option(SHARK_CANNON, WIDOW_ANCHOR)
+def sky_striker_mecha_3_spells(ctx):
+    """Shark Cannon / Widow Anchor: hold until 3+ Spells are in your GY (the stronger mode). (spec: medium)"""
+    if ctx.act != "v":
+        return 0.0
+    spells = sum(1 for c in ctx.public(ctx.player) if card_type(c) & TYPE_SPELL)
+    return -USUALLY if spells < 3 else 0.0
+
+
+GENERIC_SELECT = [roze_bonus, fodder_bonus]  # apply at every selection prompt, whatever effect is choosing

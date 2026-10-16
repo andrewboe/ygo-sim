@@ -37,6 +37,7 @@ from goldfish import (CHAIN, KIND_ACTION, KIND_END, KIND_PASS, KIND_PHASE, MAX_O
                       load, sample, set_opening)
 from card_tags import all_tags  # noqa: E402
 from board import POS_FACEDOWN, POS_FACEUP_ATTACK, can_win_battle, position_choice, zero_atk_attacker  # noqa: E402,F401
+import card_handlers  # noqa: E402
 
 INFO_KEYS = ("num_options", "option_kinds_", "option_hash_", "option_card_", "option_act_", "to_play",
              "turn", "turn_player", "msg", "lp_", "field_codes_", "field_stats_", "hand_codes_", "public_codes_",
@@ -186,7 +187,7 @@ OWN_TURN_TRAP_HINT = -2.5  # below the pass prior (-1)
 _HAND_TRAP_MONSTERS = None
 
 
-def hint_priors(cards, acts, n, tags, id_to_code, msg, info=None, i=0) -> np.ndarray:
+def hint_priors(cards, acts, n, tags, id_to_code, msg, info=None, i=0, source_cid=0, opp_cid=0) -> np.ndarray:
     global _HAND_TRAP_MONSTERS
     if _HAND_TRAP_MONSTERS is None:
         import sqlite3
@@ -219,6 +220,8 @@ def hint_priors(cards, acts, n, tags, id_to_code, msg, info=None, i=0) -> np.nda
             out[o] = HINT_PENALTY
         elif o == position:
             out[o] = POSITION_HINT
+    if info is not None:  # per-card CPU handlers (card_handlers.py); source = the card whose effect is choosing
+        out += card_handlers.offsets(info, i, n, id_to_code, source_cid, opp_cid)
     return out
 
 
@@ -415,8 +418,20 @@ def own_turn_traps() -> set:
     return _OWN_TURN_TRAPS
 
 
-def respond(info, i, n, kinds, tags, id_to_code, last_turn_act) -> int:
-    """Heuristic for the non-turn player."""
+def respond(info, i, n, kinds, tags, id_to_code, last_turn_act, source_cid=0, opp_cid=0) -> int:
+    """Heuristic for the non-turn player, overruled by per-card CPU handlers where they have an opinion:
+    their best option if they favour one; a pass (or their least-bad option) if they reject the pick."""
+    choice = _respond_heuristic(info, i, n, kinds, tags, id_to_code, last_turn_act)
+    offs = card_handlers.offsets(info, i, n, id_to_code, source_cid, opp_cid)
+    if n and offs.max() > 0:
+        return int(np.argmax(offs))
+    if n and offs[choice] < 0:  # a handler rejects the heuristic's pick: pass if possible
+        passes = np.flatnonzero(kinds == KIND_PASS)
+        return int(passes[0]) if len(passes) else int(np.argmax(offs))
+    return choice
+
+
+def _respond_heuristic(info, i, n, kinds, tags, id_to_code, last_turn_act) -> int:
     passes = np.flatnonzero(kinds == KIND_PASS)
     acting = [o for o in range(n) if kinds[o] != KIND_PASS]
     msg = int(info["msg"][i])
@@ -503,6 +518,7 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
     active = np.ones(k, dtype=bool)
     last_turn_act = np.zeros(k, dtype=int)
     last_turn_card = np.zeros(k, dtype=int)  # code-list id of the turn player's last action's card
+    last_card = np.zeros((k, 2), dtype=int)  # per player: card of its last action (whose effect selects next)
     last_actor = np.zeros(k, dtype=int)  # env reward is relative to whoever made the last move
     redealt = np.zeros(k, dtype=bool)
     plan_pos = np.zeros(k, dtype=int)
@@ -538,9 +554,10 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
             elif int(info["to_play"][i]) == player:
                 hashes = info["option_hash_"][i][:n].tolist()
                 priors = np.array([PRIOR[int(x)] for x in kinds])
-                if int(info["msg"][i]) in (IDLE, CHAIN, BATTLECMD, POSITION):
+                if int(info["msg"][i]) in (IDLE, CHAIN, BATTLECMD, POSITION) or card_handlers.ENABLED:
                     priors = priors + hint_priors(info["option_card_"][i][:n], info["option_act_"][i][:n], n,
-                                                  tags, id_to_code, int(info["msg"][i]), info, i)
+                                                  tags, id_to_code, int(info["msg"][i]), info, i,
+                                                  last_card[i, player], last_card[i, 1 - player])
                 if stop_unseen and int((kinds == 0).sum()) >= 2 and not any(weights.get(h, 0.0) for h in hashes):
                     out[i].unseen_at = len(out[i].actions)
                     active[i] = False
@@ -585,7 +602,8 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
                 # Response window: the responder's learned policy, starting from the heuristic's
                 # preference (respond with tagged interruptions after activations/summons).
                 hashes = info["option_hash_"][i][:n].tolist()
-                pref = respond(info, i, n, kinds, tags, id_to_code, last_turn_act[i])
+                pref = respond(info, i, n, kinds, tags, id_to_code, last_turn_act[i],
+                               last_card[i, int(info["to_play"][i])], last_card[i, 1 - int(info["to_play"][i])])
                 priors = np.where(np.arange(n) == pref, 1.0, 0.0)
                 if greedy:
                     acts[i] = int(np.argmax(np.array([resp_weights.get(h, 0.0) for h in hashes]) + priors))
@@ -593,8 +611,11 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
                     acts[i], _ = sample(hashes, priors, resp_weights, rng)
                 out[i].resp_trace.append((hashes, priors, int(acts[i])))
             else:
-                acts[i] = respond(info, i, n, kinds, tags, id_to_code, last_turn_act[i])
+                acts[i] = respond(info, i, n, kinds, tags, id_to_code, last_turn_act[i],
+                                  last_card[i, int(info["to_play"][i])], last_card[i, 1 - int(info["to_play"][i])])
             last_actor[i] = int(info["to_play"][i])
+            if int(acts[i]) < n and int(info["msg"][i]) in (BATTLECMD, IDLE, 12, 13, CHAIN) and                     int(info["option_card_"][i][acts[i]]):
+                last_card[i, int(info["to_play"][i])] = int(info["option_card_"][i][acts[i]])
             out[i].actions.append(int(acts[i]) % REPLAY)
         _, rew, term, trunc, step = envs.step(acts)
         for j, i in enumerate(step["env_id"]):
@@ -819,7 +840,7 @@ def main():
         pos_log.flush()
         result_log.write(json.dumps({"config": CONFIG, "gens": args.generations, "rollouts": args.rollouts,
                                      "first": args.first, "second": args.second, "game": g, "seed": args.seed,
-                                     "cpu_rules": CPU_RULES,
+                                     "cpu_rules": CPU_RULES, "card_handlers": card_handlers.ENABLED,
                                      "winner": r["winner"], "turns": r["turns"], "by": r["by"],
                                      "eval": "fitted" if weights_tag else "default",
                                      "eval_positions": weights_tag["positions"] if weights_tag else 0,
