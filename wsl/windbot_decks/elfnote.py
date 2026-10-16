@@ -66,74 +66,6 @@ def _FirstByAttackDesc(cards):
     return ordered[0] if ordered else None
 
 
-def DefaultIsDimensionalFissureTarget(type_, location):
-    if type_ == 0:
-        return False
-    if (type_ & CardType.Monster) == 0:
-        return False
-    if (type_ & (CardType.Spell | CardType.Trap)) != 0:
-        return False
-    if (location & CardLocation.Overlay) != 0:
-        return False
-    return True
-
-
-def DefaultCheckWhetherBotWillBeBanishedByType(ex, type_, location=0):
-    """DefaultExecutor.DefaultCheckWhetherBotWillBeBanished(CardType type, CardLocation location)."""
-    Bot, Enemy, Duel = ex.Bot, ex.Enemy, ex.Duel
-    if _CardId.ArtifactLancea in ex.resolvedEffectIdList \
-            or Bot.HasInSpellZone(_CardId.ImperialIronWall, True, True) \
-            or Enemy.HasInSpellZone(_CardId.ImperialIronWall, True, True):
-        return False
-    if ex.dimensionShifterCount > 0:
-        return True
-    fields = [Bot, Enemy]
-    monsterRedirectIds = [_CardId.BanisheroftheRadiance, _CardId.BanisheroftheLight, _CardId.KashtiraAriseHeart]
-    for field in fields:
-        if field.HasInMonstersZone(monsterRedirectIds, True, False, True) \
-                or field.HasInSpellZone(_CardId.MacroCosmos, True, True):
-            return True
-    if any(card is not None and card.IsCode(_CardId.RetaliatingC) and card.Location == CardLocation.MonsterZone
-           and card.IsFaceup() and not card.IsDisabled() for card in ex.retaliatingCSummonedByOwnEffect):
-        return True
-    if Enemy.HasInMonstersZone(_CardId.MaskedHERODarkLaw, True, False, True):
-        return True
-    for monster in Enemy.GetMonsters():
-        if monster is not None and monster.IsCode(_CardId.FAHangOnMach) and monster.IsFaceup() \
-                and not monster.IsDisabled() and monster.Level >= 7:
-            return True
-    for field in fields:
-        if field.HasInPendulumZone(_CardId.AmorphageGoliath, True) \
-                and any(m.IsFaceup() and m.HasSetcode(_Setcode.Amorphage) for m in field.GetMonsters()):
-            return True
-    if DefaultIsDimensionalFissureTarget(type_, location):
-        if _CardId.DifferentDimensionGround in ex.resolvedEffectIdList:
-            return True
-        for field in fields:
-            if field.HasInSpellZone(_CardId.DimensionalFissure, True, True):
-                return True
-        sacredBeastIds = [_CardId.UriaLordofSearingFlames, _CardId.HamonLordofStrikingThunder,
-                          _CardId.RavielLordofPhantasms]
-        if Enemy.HasInSpellZone(_CardId.AwakeningoftheSacredBeasts, True, True) \
-                and all(Enemy.HasInMonstersZone(i, faceUp=True) or Enemy.HasInSpellZone(i, faceUp=True)
-                        for i in sacredBeastIds):
-            return True
-    if type_ != 0 and (type_ & CardType.Monster) == 0:
-        for field in fields:
-            if field.HasInPendulumZone(_CardId.AntihumanIntelligenceMEPSYYA, True):
-                return True
-    if (type_ & CardType.Monster) != 0 and (location & (CardLocation.Hand | CardLocation.Deck)) != 0:
-        for field in fields:
-            if field.HasInMonstersZone(_CardId.HeraldoftheArcLight, True, False, True):
-                return True
-    if (type_ & CardType.Monster) != 0 and (location & CardLocation.MonsterZone) != 0:
-        if Duel.Player == 1 and Bot.HasInSpellZone(_CardId.RyuGeRealmWyrmWinds, True, True):
-            return True
-        if Duel.Player == 0 and Enemy.HasInSpellZone(_CardId.RyuGeRealmWyrmWinds, True, True):
-            return True
-    return False
-
-
 class ElfnoteExecutor(DefaultExecutor):
     DECK_EXECUTOR = True
 
@@ -409,7 +341,7 @@ class ElfnoteExecutor(DefaultExecutor):
         if location is not None:  # (CardType type, CardLocation location) overload
             if self.BanishRedirectPrevented():
                 return False
-            return DefaultCheckWhetherBotWillBeBanishedByType(self, card, location)
+            return self.DefaultCheckWhetherBotWillBeBanished(card, location)
         if self.BanishRedirectPrevented():
             return False
         if self.DefaultCheckWhetherBotWillBeBanished(card):

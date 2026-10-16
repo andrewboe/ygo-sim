@@ -59,17 +59,6 @@ class CardId:
     HeraldOfTheArcLight = 79606837
 
 
-def FindMovedCard(tracked, card, previousControler, previousLocation):
-    """The tracked card a MSG_MOVE card was before the move: WindBot keeps one ClientCard object, the views
-    key cards by place, so a moved card is matched by id, previous controller and previous location."""
-    if card is None:
-        return None
-    if card in tracked:
-        return card
-    return next((c for c in tracked if c.Id == card.Id and c.Controller == previousControler and
-                 (c.Location & previousLocation) != 0), None)
-
-
 class ChaosRitualExecutor(DefaultExecutor):
     DECK_EXECUTOR = True
 

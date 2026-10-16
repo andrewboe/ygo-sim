@@ -16,7 +16,7 @@ Default* rules, the usual WindBot rows for repositioning and Spell/Trap sets.
 import json
 import os
 
-from windbot import (CardAttribute, CardLocation, CardPosition, CardType, DuelPhase, Executor, ExecutorType,
+from windbot import (Card, CardAttribute, CardLocation, CardPosition, CardType, DuelPhase, Executor, ExecutorType,
                      GetFloodgate, GetHighestAttackMonster, GetShouldBeDisabledBeforeItUseEffectMonster, NamedCard,
                      Rand, CompareDefensePower)
 
@@ -41,6 +41,7 @@ class DefaultExecutor(Executor):
     def __init__(self):
         super().__init__()
         self.AddExecutor(ExecutorType.Activate, _CardId.SantaClaws)
+        self.AddExecutor(ExecutorType.SpellSet, self.DefaultSetForDiabellze)
         self.calledbytheGraveIdCountMap = {}
         self.crossoutDesignatorIdList = []
         self.mistakenArrestAffectedCount = 0
@@ -561,23 +562,78 @@ class DefaultExecutor(Executor):
             return card.Sequence in self.infiniteImpermanenceNegatedColumns
         return self.DefaultCheckAllAvailableSpellColumnNegated()
 
-    def DefaultCheckWhetherBotWillBeBanished(self, card=None):
-        """Subset: Macro Cosmos, the Banishers, Kashtira Arise-Heart, Dark Law, Dimensional Fissure, Dimension
-        Shifter, Different Dimension Ground."""
-        if self.Bot.HasInSpellZone(_CardId.ImperialIronWall, faceUp=True) or self.Enemy.HasInSpellZone(_CardId.ImperialIronWall, faceUp=True):
+    def DefaultCheckWhetherBotWillBeBanished(self, card_or_type=None, location=0):
+        """Whether a card sent to the GY now would be banished instead. WindBot's two overloads: a Card (or None,
+        type unknown), or a CardType and CardLocation."""
+        if card_or_type is None:
+            type_, location = 0, 0
+        elif isinstance(card_or_type, Card):
+            type_, location = card_or_type.Type, card_or_type.Location
+        else:
+            type_ = card_or_type
+        Bot, Enemy, Duel = self.Bot, self.Enemy, self.Duel
+        if _CardId.ArtifactLancea in self.resolvedEffectIdList or Bot.HasInSpellZone(_CardId.ImperialIronWall, True, True) \
+                or Enemy.HasInSpellZone(_CardId.ImperialIronWall, True, True):
             return False
         if self.dimensionShifterCount > 0:
             return True
-        for f in (self.Bot, self.Enemy):
-            if f.HasInMonstersZone([_CardId.BanisheroftheRadiance, _CardId.BanisheroftheLight, _CardId.KashtiraAriseHeart], faceUp=True) \
-                    or f.HasInSpellZone(_CardId.MacroCosmos, faceUp=True):
+        fields = (Bot, Enemy)
+        for f in fields:
+            if f.HasInMonstersZone([_CardId.BanisheroftheRadiance, _CardId.BanisheroftheLight, _CardId.KashtiraAriseHeart],
+                                   True, False, True) or f.HasInSpellZone(_CardId.MacroCosmos, True, True):
                 return True
-        if self.Enemy.HasInMonstersZone(_CardId.MaskedHERODarkLaw, faceUp=True):
+        if any(c is not None and c.IsCode(_CardId.RetaliatingC) and c.Location == CardLocation.MonsterZone and
+               c.IsFaceup() and not c.IsDisabled() for c in self.retaliatingCSummonedByOwnEffect):
             return True
-        is_monster = card is None or card.IsMonster()
-        if is_monster and (_CardId.DifferentDimensionGround in self.resolvedEffectIdList or
-                           any(f.HasInSpellZone(_CardId.DimensionalFissure, faceUp=True) for f in (self.Bot, self.Enemy))):
+        if Enemy.HasInMonstersZone(_CardId.MaskedHERODarkLaw, True, False, True):
             return True
+        if any(m.IsCode(_CardId.FAHangOnMach) and m.IsFaceup() and not m.IsDisabled() and m.Level >= 7
+               for m in Enemy.GetMonsters()):
+            return True
+        for f in fields:
+            if f.HasInPendulumZone(_CardId.AmorphageGoliath, True) and \
+                    any(m.IsFaceup() and m.HasSetcode(_Setcode.Amorphage) for m in f.GetMonsters()):
+                return True
+        if self.DefaultIsDimensionalFissureTarget(type_, location):
+            if _CardId.DifferentDimensionGround in self.resolvedEffectIdList:
+                return True
+            if any(f.HasInSpellZone(_CardId.DimensionalFissure, True, True) for f in fields):
+                return True
+            beasts = (_CardId.UriaLordofSearingFlames, _CardId.HamonLordofStrikingThunder, _CardId.RavielLordofPhantasms)
+            if Enemy.HasInSpellZone(_CardId.AwakeningoftheSacredBeasts, True, True) and \
+                    all(Enemy.HasInMonstersZone(i, faceUp=True) or Enemy.HasInSpellZone(i, faceUp=True) for i in beasts):
+                return True
+        if type_ != 0 and not type_ & CardType.Monster:
+            if any(f.HasInPendulumZone(_CardId.AntihumanIntelligenceMEPSYYA, True) for f in fields):
+                return True
+        if type_ & CardType.Monster and location & (CardLocation.Hand | CardLocation.Deck):
+            if any(f.HasInMonstersZone(_CardId.HeraldoftheArcLight, True, False, True) for f in fields):
+                return True
+        if type_ & CardType.Monster and location & CardLocation.MonsterZone:
+            if Duel.Player == 1 and Bot.HasInSpellZone(_CardId.RyuGeRealmWyrmWinds, True, True):
+                return True
+            if Duel.Player == 0 and Enemy.HasInSpellZone(_CardId.RyuGeRealmWyrmWinds, True, True):
+                return True
+        return False
+
+    @staticmethod
+    def DefaultIsDimensionalFissureTarget(type_, location):
+        return bool(type_) and bool(type_ & CardType.Monster) and not type_ & (CardType.Spell | CardType.Trap) and \
+            not location & CardLocation.Overlay
+
+    def DefaultSetForDiabellze(self):
+        """Set Spells that Diabellze's (opponent's) floodgate would stop from being activated face-up."""
+        card = self.Card
+        if card is None or card.Id == _CardId.PotOfExtravagance:
+            return False
+        if self.Enemy.HasInMonstersZone(_CardId.DiabellzeOfTheOriginalSin, True, faceUp=True) and \
+                card.HasType(CardType.Spell) and not card.HasType(CardType.QuickPlay):
+            if any(c is not None and c in self.Duel.MainPhase.ActivableCards and c.HasType(CardType.Spell) and
+                   not card.HasType(CardType.QuickPlay) and c.IsFacedown() for c in self.Bot.SpellZone):
+                return False
+            for t, cid, func in self.rows:
+                if t == ExecutorType.Activate and cid is not None and card.IsOriginalCode(cid) and (func is None or func()):
+                    return True
         return False
 
     def DefaultCheckWhetherBotCanSearch(self):

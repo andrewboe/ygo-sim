@@ -80,6 +80,10 @@ class HintMsg:
     RITUAL, FUSION, SYNCHRO, XYZ, PENDULUM = 1057, 1056, 1063, 1073, 1074
 
 
+class CardLinkMarker:
+    BottomLeft, Bottom, BottomRight, Left, Right, TopLeft, Top, TopRight = 0x01, 0x02, 0x04, 0x08, 0x20, 0x40, 0x80, 0x100
+
+
 class Zones:
     z0, z1, z2, z3, z4, z5, z6 = 0x1, 0x2, 0x4, 0x8, 0x10, 0x20, 0x40
     FieldZone, MonsterZones, MainMonsterZones, ExtraMonsterZones = 0x20, 0x7f, 0x1f, 0x60
@@ -506,6 +510,15 @@ class ChainInfo:
     def IsCode(self, *ids):
         return self.RelatedCard.IsCode(*ids)
 
+    def HasType(self, type_):
+        return bool(self.ActivateType & type_)
+
+    def IsSpell(self):
+        return self.HasType(CardType.Spell)
+
+    def IsTrap(self):
+        return self.HasType(CardType.Trap)
+
     def IsActivateCode(self, *ids):
         flat = [i for x in ids for i in (x if isinstance(x, (list, tuple, set)) else [x])]
         return bool(self.ActivateId) and (self.ActivateId in flat or (bool(self.ActivateAlias) and self.ActivateAlias in flat))
@@ -547,6 +560,7 @@ class DuelView:
         self.Turn = 1
         self.IsFirst = True
         self.IsNewRule = True
+        self.IsNewRule2020 = True       # EDOPro duels use Master Rule 2020
         self.CurrentChain = []          # Card per link, link 1 first
         self.CurrentChainInfo = []      # ChainInfo per link
         self.ChainTargets = []          # cards targeted by the chain so far
@@ -771,7 +785,62 @@ class Util:
     @staticmethod
     def ShuffleList(items):
         result = list(items)
-        Rand.shuffle(result)
+        Util.ShuffleListInPlace(result)
+        return result
+
+    @staticmethod
+    def ShuffleListInPlace(items):
+        """Fisher-Yates on Program.Rand."""
+        n = len(items)
+        while n > 1:
+            n -= 1
+            k = Rand.randrange(n + 1)
+            items[n], items[k] = items[k], items[n]
+
+    @staticmethod
+    def CanMakeLinkRating(materials, linkRating):
+        """Whether the materials can make exactly this Link Rating (Link monsters count 1 or their rating)."""
+        if not materials or linkRating <= 0 or any(c is None for c in materials):
+            return False
+        totals = {0}
+        for m in materials:
+            nxt = set()
+            for t in totals:
+                if t + 1 <= linkRating:
+                    nxt.add(t + 1)
+                if m.HasType(CardType.Link) and m.LinkCount > 1 and t + m.LinkCount <= linkRating:
+                    nxt.add(t + m.LinkCount)
+            totals = nxt
+            if not totals:
+                return False
+        return linkRating in totals
+
+    def GetBotAvailZonesFromExtraDeck(self, remove=None):
+        """Main Monster Zones a monster from the Extra Deck can go to once `remove` (a card or cards) leaves."""
+        remove = [] if remove is None else [remove] if isinstance(remove, Card) else list(remove)
+        bot = [None if c is not None and c in remove else c for c in self.Bot.MonsterZone]
+        enemy = [None if c is not None and c in remove else c for c in self.Enemy.MonsterZone]
+        if not self.Duel.IsNewRule or self.Duel.IsNewRule2020:
+            return Zones.MainMonsterZones
+        lm = lambda c, d: c is not None and c.HasLinkMarker(d)
+        M = CardLinkMarker
+        result = 0
+        if bot[5] is None and bot[6] is None:
+            if enemy[5] is None:
+                result |= Zones.z6
+            if enemy[6] is None:
+                result |= Zones.z5
+        if bot[0] is None and (lm(bot[1], M.Left) or lm(bot[5], M.BottomLeft) or lm(enemy[6], M.TopRight)):
+            result |= Zones.z0
+        if bot[1] is None and (lm(bot[0], M.Right) or lm(bot[2], M.Left) or lm(bot[5], M.Bottom) or lm(enemy[6], M.Top)):
+            result |= Zones.z1
+        if bot[2] is None and (lm(bot[1], M.Right) or lm(bot[3], M.Left) or lm(bot[5], M.BottomRight) or
+                               lm(enemy[6], M.TopLeft) or lm(bot[6], M.BottomLeft) or lm(enemy[5], M.TopRight)):
+            result |= Zones.z2
+        if bot[3] is None and (lm(bot[2], M.Right) or lm(bot[4], M.Left) or lm(bot[6], M.Bottom) or lm(enemy[5], M.Top)):
+            result |= Zones.z3
+        if bot[4] is None and (lm(bot[3], M.Right) or lm(bot[6], M.BottomRight) or lm(enemy[5], M.TopLeft)):
+            result |= Zones.z4
         return result
 
 
@@ -870,6 +939,30 @@ def IsExistingMatchingCard(cards, f, count=1):
 
 def GetShouldBeDisabledBeforeItUseEffectMonster(cards, canBeTarget=True):
     return next((c for c in _targetable(cards, canBeTarget) if c.IsMonsterShouldBeDisabledBeforeItUseEffect()), None)
+
+
+# Ports call these AIUtil / Duel members as functions too.
+ShuffleListInPlace = Util.ShuffleListInPlace
+CanMakeLinkRating = Util.CanMakeLinkRating
+
+
+def GetBotAvailZonesFromExtraDeck(util, remove=None):
+    return util.GetBotAvailZonesFromExtraDeck(remove)
+
+
+def IsNewRule2020(duel):
+    return duel.IsNewRule2020
+
+
+def FindMovedCard(tracked, card, previousControler, previousLocation):
+    """Which of the `tracked` cards a MSG_MOVE card was before it moved. WindBot keeps one ClientCard object
+    through a move; here a card is keyed by its place, so match by id, previous controller and location."""
+    if card is None:
+        return None
+    if card in tracked:
+        return card
+    return next((c for c in tracked if c is not None and c.Id == card.Id and c.Controller == previousControler and
+                 c.Location & previousLocation), None)
 
 
 # --- Views from env info ------------------------------------------------------------------------------
