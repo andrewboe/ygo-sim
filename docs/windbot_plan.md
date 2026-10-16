@@ -27,22 +27,31 @@ mitsurugi 29/42, sky-striker 30/37.
    scores options by WindBot's first-passing-row rule, keeps side effects (flags, AI.SelectCard queues) only
    for the option actually chosen.
 2. **DefaultExecutor port** (done). `wsl/windbot_default.py`: the Default* staple conditions, on-targeted and
-   negation / search / draw checks, OnChainSolved bookkeeping (Called by the Grave, Lock Bird, Maxx "C" and the
-   Mulcharmys, Mistaken Arrest, Dimension Shifter) from the engine's `resolved_` links, and the battle rules
-   (GameAI's attack choice, OnSelectAttackTarget, OnPreBattleBetween, 0-ATK monsters to Defense).
-   `GenericExecutor` (staple rows, reposition, Spell/Trap sets) runs for decks without a deck executor. At
-   BATTLECMD with no row firing, the attack WindBot would make gets PICK and every attack option queues its
-   target for the target prompt; no worthwhile attack picks leaving the Battle Phase.
-3. **Deck executors**: one module per WindBot executor mapped to field decks (`DECK_EXECUTORS`), in coverage
-   order: Elfnote, ChaosRitual, Maliss, SkyStriker, DarkMagician, Ryzeal (Blitzclique builds), then
-   Albaz/Dogmatika rules for Branded. Ported rule by rule from IceYGO (MIT, keep attribution).
+   negation / search / draw checks, the message callbacks that track resolved hand traps (Called by the Grave,
+   Lock Bird, Maxx "C" and the Mulcharmys, Mistaken Arrest, Dimension Shifter) and the battle rules
+   (OnSelectAttackTarget, OnPreBattleBetween, 0-ATK monsters to Defense). `GenericExecutor` (staple rows,
+   reposition, Spell/Trap sets) runs for decks without a deck executor.
+3. **Deck executors** (in progress). Infrastructure (done): the engine's event ring (`events_`: MSG_MOVE,
+   CHAINING, CHAIN_SOLVING/SOLVED/END, NEGATED, NEW_TURN/PHASE, POS_CHANGE, summons, BECOME_TARGET), select
+   prompts (`select_`: hint, min/max, cancelable, sum; `select_cards_` candidates; `option_combo_` each
+   option's candidates), yes/no and option descriptions, the resolving link and each link's description and
+   activating player; `wsl/windbot_gameai.py` ports GameAI (row-major action choice, the AI.Select* stack,
+   OnSelectCard / Sum / Tribute / Place / Position / Option / YesNo with WindBot's fallbacks) and replays the
+   messages since each decision through the executor's callbacks. Porting guide: docs/windbot_porting.md;
+   registry: `wsl/windbot_decks/__init__.py`. Executors, in coverage order: Elfnote, ChaosRitual, Maliss,
+   SkyStriker, DarkMagician, Ryzeal (Blitzclique builds), then Albaz/Dogmatika rules for Branded.
 4. **Gaps**: Konami-only cards from the specs; cards neither covers stay with the search.
 5. **Validation**: unit tests per executor on built boards, the live firing test, then paired A/Bs big
    enough to mean something (~60 games per arm, overnight), plus review.py flag deltas.
 
 ## Known limits of the layer
 
-- `IsDisabled`, equips/targets relations, counters, which monsters already attacked: not exposed.
+- `IsDisabled`, equips/targets relations, counters, announces, link markers, which monsters already
+  attacked, the battling monster: not exposed.
+- Cards are rebuilt per decision; a card's identity is (Id, Controller, Location, Sequence), standing in for
+  WindBot's object identity. Message callbacks see the chain state of their time but the current board.
+- GameAI's last-resort defaults (first cards, pass, end turn) count only for deck executors; for the generic
+  executor the search decides.
 - Xyz material codes: only counts. Effect descriptions: only for the option's own card (another card's
   granted effect reads -1).
 - Rollouts replay earlier turns without running executors, so per-game executor flags set before the

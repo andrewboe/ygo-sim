@@ -11,7 +11,6 @@ hint_priors adds the offsets to the turn player's priors (search can still overr
 follows them for the other player, so both players' turns use them. The specs the handlers come from,
 with their Konami evidence, are in cpu_handler_specs.jsonl; how to refresh them: docs/cpu_handlers.md.
 """
-import copy
 import os
 from dataclasses import dataclass
 
@@ -20,6 +19,7 @@ import numpy as np
 import board
 import windbot
 import windbot_default
+import windbot_gameai
 
 ENABLED = os.environ.get("YGOSIM_CARD_HANDLERS", "0") != "0"
 if ENABLED:  # the env adds Deck / Extra Deck contents to info (goldfish_info.inc) only when asked
@@ -139,19 +139,22 @@ def offsets(info, i, n, id_to_code, source_cid=0, opp_cid=0) -> np.ndarray:
 
 # --- WindBot executors ------------------------------------------------------------------------------
 # Each player runs the executor of its deck (DECK_EXECUTORS, by ygo-sim deck name; DEFAULT_EXECUTOR for the
-# rest), one instance per env so per-game flags stay with their rollout. windbot.py explains the mapping.
-PICK, ALSO, REJECT = USUALLY, TIEBREAK, -USUALLY
-DECK_EXECUTORS: dict = {}          # deck name -> windbot.Executor subclass
+# rest), one instance per env so per-game state stays with its rollout. windbot_gameai.decide scores the
+# options; an executor's side effects (flags, AI.Select* queues) are kept only for the option actually chosen.
+DECK_EXECUTORS: dict = {}          # deck name -> windbot.Executor subclass (windbot_decks)
 DEFAULT_EXECUTOR = windbot_default.GenericExecutor
 _decks = ["", ""]
 _instances: dict = {}               # (env, player) -> executor
-_pending: dict = {}                 # (env, player) -> {option: executor state if that option is chosen}
+_pending: dict = {}                 # (env, player) -> ({option: state}, state kept whatever is chosen)
 
 
 def set_decks(first, second):
     """Deck names of player 0 and player 1 (game.py)."""
     _decks[0], _decks[1] = first, second
     _instances.clear()
+    if ENABLED:
+        import windbot_decks
+        DECK_EXECUTORS.update(windbot_decks.executors((first, second)))
 
 
 def reset(k=None):
@@ -167,154 +170,26 @@ def _executor(i, p):
     return ex
 
 
-def _card_for(bot, code, act, zone):
-    """The bot's Card an option names (code from option_card_), found where the option letter points."""
-    places = {"h": bot.Hand, "m": bot.MonsterZone, "s": bot.SpellZone, "g": bot.Graveyard, "r": bot.Banished,
-              "x": bot.ExtraDeck}
-    first = places.get(act)
-    for cards in ([first] if first else []) + [bot.Hand, bot.MonsterZone, bot.SpellZone, bot.Graveyard,
-                                               bot.Banished, bot.ExtraDeck, bot.Deck]:
-        for c in cards:
-            if c is not None and c.Id == code and (not zone or cards is not first or c.Location not in
-                                                    (windbot.CardLocation.MonsterZone, windbot.CardLocation.SpellZone)
-                                                    or c.Sequence == zone - 1):
-                return c
-    return windbot.Card(code, windbot.CardLocation.Hand) if code else None
-
-
-def _enemy_card_for(enemy, code, zone):
-    """The enemy's field Card a selection candidate names ("o" options), by zone when the option has one; a
-    face-down card (hidden from the bot, Id 0) only by zone."""
-    cards = [c for c in enemy.MonsterZone + enemy.SpellZone if c is not None and c.Id in (code, 0)]
-    at_zone = [c for c in cards if zone and c.Sequence == zone - 1]
-    return next((c for c in at_zone if c.Id == code), at_zone[0] if at_zone else
-                next((c for c in cards if c.Id == code), None))
-
-
-def _matches(pref, card, code):
-    if isinstance(pref, windbot.Card):
-        return card is not None and pref.Id == card.Id and pref.Controller == card.Controller and             pref.Location == card.Location and pref.Sequence == card.Sequence
-    return int(pref) == code
-
-
 def windbot_offsets(info, i, n, id_to_code) -> np.ndarray:
-    out = np.zeros(n)
-    msg = int(info["msg"][i])
     if not ENABLED or not n:
-        return out
+        return np.zeros(n)
     p = int(info["to_play"][i])
-    ex = _executor(i, p)
-    bot, enemy, duel = windbot.build_views(info, i, p)
-    ex.Bot, ex.Enemy, ex.Duel, ex.Util = bot, enemy, duel, windbot.Util(bot, enemy, duel)
-    turn = int(info["turn"][i])
-    if ex._turn != turn:  # after the views: OnNewTurn reads Duel.Turn
-        ex._turn = turn
-        ex.OnNewTurn()
-    if hasattr(ex, "OnUpdate"):  # chain links resolved since the last decision (OnChainSolved)
-        ex.OnUpdate()
-    # unused selections expire like WindBot's (new phase, chain end); an attack target lives for one attack
-    # (the env answers single-target prompts itself, so a queued target may never be asked for)
-    phase, chain_len = (turn, duel.Phase), len(duel.CurrentChain)
-    if getattr(ex, "_phase", None) != phase or (getattr(ex, "_chain_len", 0) and not chain_len) or msg == windbot.BATTLECMD:
-        ex.AI.Clear()
-    ex._phase, ex._chain_len = phase, chain_len
-    code = lambda o: id_to_code[int(info["option_card_"][i][o])] if 0 < int(info["option_card_"][i][o]) < len(id_to_code) else 0
-    acts = [chr(int(a)) for a in info["option_act_"][i][:n]]
-    zones = [int(z) for z in info["option_zone_"][i][:n]]
-    kinds = info["option_kinds_"][i][:n]
-    pending = {}
-    if msg in (windbot.IDLE, windbot.BATTLECMD, windbot.CHAIN, windbot.EFFECTYN):
-        base = copy.deepcopy(ex._state())
-        ranks, rejected = {}, set()
-        for o in range(n):
-            types = windbot.option_types(msg, acts[o], int(kinds[o]) == 1)
-            if not types:
-                continue
-            card = _card_for(bot, code(o), acts[o], zones[o])
-            ex.Card, ex.ActivateDescription = card, windbot.activate_description(int(info["option_desc_"][i][o]), code(o))
-            matched = False
-            for r, (t, cid, fn) in enumerate(ex.rows):
-                if t not in types or (cid is not None and (card is None or not card.IsCode(cid))):
-                    continue
-                matched = True
-                ex.__dict__.update(copy.deepcopy(base))
-                if fn is None or fn():
-                    ranks[o] = r
-                    pending[o] = copy.deepcopy(ex._state())
-                    break
-            ex.__dict__.update(copy.deepcopy(base))
-            if matched and o not in ranks:
-                rejected.add(o)
-        best = min(ranks, key=ranks.get) if ranks else None
-        for o in ranks:
-            out[o] = PICK if o == best else ALSO
-        for o in rejected:
-            out[o] = REJECT
-        if msg == windbot.BATTLECMD and best is None and hasattr(ex, "BattleChoice"):
-            _battle(ex, base, out, pending, bot, acts, zones, code, n)
-    elif msg in SELECTS and (ex.AI.cards or ex.AI.materials):
-        prefs = ex.AI.cards[0] if ex.AI.cards else ex.AI.materials[0]
-        for o in range(n):
-            card = _card_for(bot, code(o), acts[o], zones[o]) if acts[o] != "o" else _enemy_card_for(enemy, code(o), zones[o])
-            k = next((k for k, pr in enumerate(prefs) if _matches(pr, card, code(o))), None)
-            if k is not None:
-                out[o] = PICK + TIEBREAK * (len(prefs) - k) / len(prefs)
-    elif msg == windbot.POSITION and (ex.AI.positions or hasattr(ex, "OnSelectPosition")):
-        pos = ex.AI.positions[0] if ex.AI.positions else ex.OnSelectPosition(code(0), None)
-        want = windbot._POSITION_LETTER.get(pos)
-        out[:] = [PICK if a == want else 0.0 for a in acts]
-    elif msg == windbot.YESNO and ex.AI.yesno:
-        out[:] = [PICK if (int(kinds[o]) != 1) == ex.AI.yesno[0] else 0.0 for o in range(n)]
-    elif msg == windbot.SELECT_OPTION and ex.AI.options:
-        out[:] = [PICK if o == ex.AI.options[0] else 0.0 for o in range(n)]
-    elif msg in (windbot.SELECT_PLACE, windbot.SELECT_DISFIELD) and ex.AI.places:
-        out[:] = [PICK if zones[o] and ex.AI.places[0] >> (zones[o] - 1) & 1 else 0.0 for o in range(n)]
-    _pending[(i, p)] = (msg, pending)
+    out, pending, keep = windbot_gameai.decide(_executor(i, p), info, i, n, id_to_code)
+    _pending[(i, p)] = (pending, keep)
     return out
 
 
-def _battle(ex, base, out, pending, bot, acts, zones, code, n):
-    """No battle row fired: WindBot's attack choice (DefaultExecutor.BattleChoice). The chosen attack gets PICK;
-    every attack option queues the target OnSelectAttackTarget would pick, for the target prompt; with no
-    attack worth making, leaving the Battle Phase gets PICK."""
-    attacks = {o: _card_for(bot, code(o), "m", zones[o]) for o in range(n) if acts[o] == "a"}
-    attacks = {o: c for o, c in attacks.items() if c is not None}
-    if not attacks:
-        return
-    choice = ex.BattleChoice(list(attacks.values()))
-    if choice is None:
-        leave = next((o for o in range(n) if acts[o] == "m"), next((o for o in range(n) if acts[o] == "e"), None))
-        if leave is not None:
-            out[leave] = PICK
-        return
-    for o, attacker in attacks.items():
-        if attacker is choice[0]:
-            out[o] = PICK
-            target = choice[1]
-        else:
-            result = ex.OnSelectAttackTarget(attacker, ex.Enemy.GetMonsters())
-            target = result[1] if result else None
-        if target is not None:
-            ex.AI.SelectCard(target)
-            pending[o] = copy.deepcopy(ex._state())
-            ex.__dict__.update(copy.deepcopy(base))
-
-
 def chosen(i, p, o):
-    """The player took option o at decision i: keep that option's executor side effects, use up a pre-set
-    selection the prompt answered."""
-    msg, pending = _pending.pop((i, p), (0, {}))
+    """The player took option o at decision i: keep that option's executor side effects (or what the prompt
+    used up whatever was chosen)."""
+    pending, keep = _pending.pop((i, p), ({}, None))
     ex = _instances.get((i, p))
     if ex is None:
         return
     if o in pending:
         ex.__dict__.update(pending[o])
-    queue = {windbot.SELECT_CARD: ex.AI.cards or ex.AI.materials, windbot.TRIBUTE: ex.AI.cards or ex.AI.materials,
-             windbot.SELECT_SUM: ex.AI.cards or ex.AI.materials, windbot.POSITION: ex.AI.positions,
-             windbot.YESNO: ex.AI.yesno, windbot.SELECT_OPTION: ex.AI.options, windbot.SELECT_PLACE: ex.AI.places,
-             windbot.SELECT_DISFIELD: ex.AI.places}.get(msg)
-    if queue:
-        queue.pop(0)
+    elif keep is not None:
+        ex.__dict__.update(keep)
 
 
 # --- Handlers ---------------------------------------------------------------------------------------

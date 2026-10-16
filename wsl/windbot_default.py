@@ -1,13 +1,14 @@
 """WindBot's DefaultExecutor, ported for the card handlers (docs/windbot_plan.md, phase 2).
 
 From IceYGO/windbot Game/AI/DefaultExecutor.cs (MIT, see THIRD_PARTY_NOTICES.md): the shared Default*
-conditions deck executors use for staples, the on-targeted / negation / search checks, and the battle rules
-(attack target choice, OnPreBattleBetween, OnSelectPosition). Names follow the C# so ports read side by side.
+conditions deck executors use for staples, the on-targeted / negation / search checks, the message callbacks
+that track resolved hand traps (OnChainSolved, OnMove, OnNewTurn) and the battle rules (OnSelectAttackTarget,
+OnPreBattleBetween, OnSelectPosition). Names follow the C# so ports read side by side.
 
 Kept for the field-deck pool; left out: Kaiju, Vaylantz, Diabellze, Chicken Game, Dimensional Barrier, Honest,
 Timelords (no pool cards use them). Approximations, because the env doesn't expose them: cards are never
-"disabled", Infinite Impermanence's column lock isn't tracked, Crossout Designator's declared name isn't known,
-and the Called by the Grave / Mistaken Arrest / Dimension Shifter counters only see this rollout's turns.
+"disabled", Infinite Impermanence's column lock (OnHintZone) isn't tracked, and the Called by the Grave /
+Mistaken Arrest / Dimension Shifter counters only see this rollout's turns.
 
 GenericExecutor is the executor for decks WindBot has none for: the pool's hand traps and staples with their
 Default* rules, the usual WindBot rows for repositioning and Spell/Trap sets.
@@ -15,8 +16,9 @@ Default* rules, the usual WindBot rows for repositioning and Spell/Trap sets.
 import json
 import os
 
-from windbot import (AIRecorder, Card, CardAttribute, CardLocation, CardPosition, CardType, DuelPhase, Executor,
-                     ExecutorType, GetFloodgate, GetHighestAttackMonster, GetShouldBeDisabledBeforeItUseEffectMonster)
+from windbot import (CardAttribute, CardLocation, CardPosition, CardType, DuelPhase, Executor, ExecutorType,
+                     GetFloodgate, GetHighestAttackMonster, GetShouldBeDisabledBeforeItUseEffectMonster, NamedCard,
+                     Rand, CompareDefensePower)
 
 _LISTS = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "windbot_lists.json")))["lists"]
 
@@ -46,55 +48,93 @@ class DefaultExecutor(Executor):
         self.resolvedEffectIdList = []
         self.enemyResolvedEffectIdList = []
         self.infiniteImpermanenceNegatedColumns = []
-        self._resolved_seen = 0
+        self.retaliatingCSummonedByOwnEffect = []
 
-    # --- bookkeeping WindBot does in OnChainSolved / OnMove / OnNewTurn --------------------------------
+    # --- message callbacks -----------------------------------------------------------------------------
     def OnNewTurn(self):
         self.infiniteImpermanenceNegatedColumns.clear()
         self.resolvedEffectIdList.clear()
         self.enemyResolvedEffectIdList.clear()
-        self._resolved_seen = 0
-        if self.Duel is not None and self.Duel.Turn <= 1:
+        if self.Duel.Turn <= 1:
             self.calledbytheGraveIdCountMap.clear()
             self.mistakenArrestAffectedCount = 0
             self.dimensionShifterCount = 0
+            self.retaliatingCSummonedByOwnEffect.clear()
         self.mistakenArrestAffectedCount = max(self.mistakenArrestAffectedCount - 1, 0)
         if self.dimensionShifterCount > 0:
             self.dimensionShifterCount -= 1
-        for k in self.calledbytheGraveIdCountMap:
+        for k in list(self.calledbytheGraveIdCountMap):
             if self.calledbytheGraveIdCountMap[k] > 0:
                 self.calledbytheGraveIdCountMap[k] -= 1
         self.crossoutDesignatorIdList.clear()
 
-    def OnUpdate(self):
-        """Process chain links resolved since the last decision (card_handlers calls this every decision)."""
-        for chain in self.Duel.ResolvedThisTurn[self._resolved_seen:]:
-            self.OnChainSolved(chain)
-        self._resolved_seen = len(self.Duel.ResolvedThisTurn)
+    def OnChainSolved(self, chainIndex):
+        chain = self.Duel.GetCurrentSolvingChainInfo()
+        if chain is not None and not self.Duel.IsCurrentSolvingChainNegated():
+            if chain.IsActivateCode(_CardId.LockBird):
+                self.resolvedEffectIdList.append(_CardId.LockBird)
+            if chain.IsActivateCode(_CardId.DifferentDimensionGround):
+                self.resolvedEffectIdList.append(_CardId.DifferentDimensionGround)
+            if chain.IsActivateCode(_CardId.ArtifactLancea) and \
+                    chain.ActivateDescription == self.Util.GetStringId(_CardId.ArtifactLancea, 1):
+                self.resolvedEffectIdList.append(_CardId.ArtifactLancea)
+            if chain.IsActivateCode(_CardId.DimensionShifter):
+                self.dimensionShifterCount = 2
+            if chain.ActivatePlayer == 1:
+                for id_ in (_CardId.MaxxC, _CardId.MulcharmyPurulia, _CardId.MulcharmyFuwalos, _CardId.MulcharmyNyalus):
+                    if id_ and chain.IsActivateCode(id_):
+                        self.enemyResolvedEffectIdList.append(id_)
+                if chain.IsActivateCode(_CardId.MistakenArrest):
+                    self.mistakenArrestAffectedCount = max(self.mistakenArrestAffectedCount, 3 if self.Duel.Player == 1 else 2)
 
-    def OnChainSolved(self, chain):
-        if chain.Negated:
+    def OnMove(self, card, previousControler, previousLocation, currentControler, currentLocation):
+        if card is None:
             return
-        if chain.IsActivateCode(_CardId.LockBird):
-            self.resolvedEffectIdList.append(_CardId.LockBird)
-        if chain.IsActivateCode(_CardId.DifferentDimensionGround):
-            self.resolvedEffectIdList.append(_CardId.DifferentDimensionGround)
-        if chain.IsActivateCode(_CardId.DimensionShifter):
-            self.dimensionShifterCount = 2
-        if chain.ActivatePlayer == 1:
-            for id_ in (_CardId.MaxxC, _CardId.MulcharmyPurulia, _CardId.MulcharmyFuwalos, _CardId.MulcharmyNyalus):
-                if id_ and chain.IsActivateCode(id_):
-                    self.enemyResolvedEffectIdList.append(id_)
-            if chain.IsActivateCode(_CardId.MistakenArrest):
-                self.mistakenArrestAffectedCount = max(self.mistakenArrestAffectedCount, 3 if self.Duel.Player == 1 else 2)
-        # OnMove: Called by the Grave banishes its target; that card's effects stay negated for two turns
-        if chain.IsActivateCode(_CardId.CalledByTheGrave) and chain.Targets:
-            target = chain.Targets[0]
-            self.calledbytheGraveIdCountMap[target.Alias or target.Id] = 2
+        if not currentLocation & CardLocation.MonsterZone or card.IsFacedown():
+            if card in self.retaliatingCSummonedByOwnEffect:
+                self.retaliatingCSummonedByOwnEffect.remove(card)
+        solving = self.Duel.GetCurrentSolvingChainInfo()
+        if solving is not None and currentLocation == CardLocation.Removed:
+            origin = (card.Data.Alias or card.Id) if card.Data else card.Id
+            if solving.IsActivateCode(_CardId.CalledByTheGrave):
+                self.calledbytheGraveIdCountMap[origin] = 2
+            if solving.IsActivateCode(_CardId.CrossoutDesignator):
+                self.crossoutDesignatorIdList.append(origin)
 
-    # --- battle (OnSelectAttackTarget, OnPreBattleBetween, GameAI.OnSelectBattleCmd) ----------------------
+    def OnPosChange(self, card, previousPosition, currentPosition):
+        if card is not None and currentPosition & CardPosition.FaceDown and card in self.retaliatingCSummonedByOwnEffect:
+            self.retaliatingCSummonedByOwnEffect.remove(card)
+
+    def OnSpSummoned(self):
+        chain = self.Duel.GetCurrentSolvingChainInfo()
+        if chain is not None and not self.Duel.IsCurrentSolvingChainNegated() and chain.IsActivateCode(_CardId.RetaliatingC):
+            for card in self.Duel.LastSummonedCards:
+                if card is not None and card.IsCode(_CardId.RetaliatingC) and card not in self.retaliatingCSummonedByOwnEffect:
+                    self.retaliatingCSummonedByOwnEffect.append(card)
+
+    def OnSelectCard(self, cards, min_, max_, hint, cancelable):
+        solving = self.Duel.GetCurrentSolvingChainInfo()
+        if solving is not None and solving.IsActivateCode(_CardId.DogmatikaAlbaZoa) and solving.ActivatePlayer == 1:
+            extra = list(self.Bot.ExtraDeck)
+            Rand.shuffle(extra)
+            return self.Util.CheckSelectCount(extra, cards, min_, max_)
+        return None
+
+    def OnPreActivate(self, card):
+        last = self.Util.GetLastChainCard()
+        if last is not None and self.Duel.Phase == DuelPhase.Standby and last.IsCode(
+                _CardId.SandaionTheTimelord, _CardId.GabrionTheTimelord, _CardId.MichionTheTimelord,
+                _CardId.ZaphionTheTimelord, _CardId.HailonTheTimelord, _CardId.RaphionTheTimelord,
+                _CardId.SadionTheTimelord, _CardId.MetaionTheTimelord, _CardId.KamionTheTimelord,
+                _CardId.LazionTheTimelord):
+            return False
+        if (card.Location == CardLocation.Hand or card.Location == CardLocation.SpellZone and card.IsFacedown()) and \
+                (card.IsSpell() and self.DefaultSpellWillBeNegated(card) or card.IsTrap() and self.DefaultTrapWillBeNegated(card)):
+            return False
+        return True
+
+    # --- battle ------------------------------------------------------------------------------------------
     def OnSelectAttackTarget(self, attacker, defenders):
-        """(attacker, defender or None for a direct attack), or None to try the next attacker."""
         for defender in defenders:
             attacker.RealPower = attacker.GetAttackPower()
             defender.RealPower = defender.GetDefensePower()
@@ -102,8 +142,19 @@ class DefaultExecutor(Executor):
                 continue
             if attacker.RealPower > defender.RealPower or \
                     (attacker.RealPower >= defender.RealPower and attacker.IsLastAttacker and defender.IsAttack()):
-                return attacker, defender
+                return self.AI.Attack(attacker, defender)
+        if attacker.CanDirectAttack:
+            return self.AI.Attack(attacker, None)
         return None
+
+    def OnSelectBattleReplay(self):
+        if self.Bot.BattlingMonster is None:
+            return False
+        defenders = sorted(self.Duel.Fields[1].GetMonsters(), key=CompareDefensePower, reverse=True)
+        if not defenders:
+            return True
+        result = self.OnSelectAttackTarget(self.Bot.BattlingMonster, defenders)
+        return result is not None and result.Action == 0  # BattleAction.Attack
 
     def OnPreBattleBetween(self, attacker, defender):
         if not attacker.IsMonsterHasPreventActivationEffectInBattle():
@@ -139,26 +190,14 @@ class DefaultExecutor(Executor):
                 return False
         return True
 
-    def BattleChoice(self, attackers):
-        """GameAI.OnSelectBattleCmd's attack choice: (attacker, defender-or-None) or None (leave the Battle Phase).
-        `attackers`: the bot's monsters that can attack."""
-        attackers = sorted(attackers, key=lambda c: c.GetAttackPower(), reverse=True)
-        defenders = sorted(self.Enemy.GetMonsters(), key=lambda c: c.GetDefensePower(), reverse=True)
-        if not attackers:
-            return None
-        if not defenders:
-            direct = next((a for a in reversed(attackers) if a.GetAttackPower() > 0), None)
-            return (direct, None) if direct is not None else None  # weakest attacks directly first
-        for k, attacker in enumerate(attackers):
-            attacker.IsLastAttacker = k == len(attackers) - 1
-            result = self.OnSelectAttackTarget(attacker, defenders)
-            if result is not None:
-                return result
-        return None
-
-    def OnSelectPosition(self, card_id, positions):
+    def OnSelectPosition(self, cardId, positions):
         """0-ATK monsters go to face-up Defense Position; 0 = no opinion."""
-        return CardPosition.FaceUpDefence if Card(card_id, CardLocation.Hand).Attack == 0 else 0
+        if self.AI.HaveSelectedPosition():
+            return 0
+        data = NamedCard.Get(cardId)
+        if data is not None and data.Attack == 0:
+            return CardPosition.FaceUpDefence
+        return 0
 
     def OnSelectMonsterSummonOrSet(self, card):
         """Set when this card can't beat the enemies."""
