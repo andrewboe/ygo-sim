@@ -88,7 +88,7 @@ def _min_by(cards, key):
 class MalissExecutor(DefaultExecutor):
     DECK_EXECUTOR = True
 
-    SetcodeMaliss = 0x1bf
+    SetcodeMaliss = 0x1b9
     SetcodeTimeLord = 0x4a
     SetcodePhantom = 0xdb
     SetcodeOrcust = 0x11b
@@ -368,7 +368,7 @@ class MalissExecutor(DefaultExecutor):
         return not c.HasType(CardType.Link) or max(1, c.LinkCount) == 1
 
     def IsMaliss(self, c):
-        return c.HasSetcode(0x1bf)
+        return c.HasSetcode(0x1b9)
 
     def ScoreForBanishedMaliss(self, c):
         if c.IsCode(CardId.MalissInTheMirror):
@@ -1768,7 +1768,7 @@ class MalissExecutor(DefaultExecutor):
             revived = next((c for c in self.Bot.MonsterZone if c is not None and c.IsFaceup() and
                             c.IsCode(self.lastRevivedIdBySplash)), None)
         if revived is None:
-            revived = next((c for c in self.Bot.MonsterZone if c is not None and c.IsFaceup() and c.HasSetcode(0x1bf) and
+            revived = next((c for c in self.Bot.MonsterZone if c is not None and c.IsFaceup() and c.HasSetcode(0x1b9) and
                             c != splash and not c.HasType(CardType.Link)), None)
         if revived is None:
             return []
@@ -2316,7 +2316,7 @@ class MalissExecutor(DefaultExecutor):
         return False
 
     def IsMalissMonster(self, c):
-        return c is not None and c.IsMonster() and c.HasSetcode(0x1bf)
+        return c is not None and c.IsMonster() and c.HasSetcode(0x1b9)
 
     def CanMakeLinkNWithFlexibleTwo(self, a, b, target):
         a1, aL = 1, (max(1, a.LinkCount) if (a is not None and a.HasType(CardType.Link)) else 1)
@@ -2364,7 +2364,7 @@ class MalissExecutor(DefaultExecutor):
         if self.enemyActivateLancea:
             return False
         if self.Duel.Player == 0:
-            gy = GetMatchingCards(self.Bot.Graveyard, lambda c: c is not None and c.HasSetcode(0x1bf) and c != self.Card)
+            gy = GetMatchingCards(self.Bot.Graveyard, lambda c: c is not None and c.HasSetcode(0x1b9) and c != self.Card)
 
             def pickP1(src):
                 pref = [CardId.MalissQ_WhiteBinder, CardId.MalissQ_HeartsCrypter, CardId.MalissQ_RedRansom]
@@ -2750,7 +2750,7 @@ class MalissExecutor(DefaultExecutor):
         return self.DontSelfNG()
 
     def GetBanishedMaliss(self):
-        return GetMatchingCards(self.Bot.Banished, lambda c: c is not None and c.IsFaceup() and c.HasSetcode(0x1bf))
+        return GetMatchingCards(self.Bot.Banished, lambda c: c is not None and c.IsFaceup() and c.HasSetcode(0x1b9))
 
     def PickBanishedMalissForHC(self, cand):
         cand = [c for c in cand if not c.IsCode(CardId.MalissQ_WhiteBinder) and not c.IsCode(CardId.MalissQ_RedRansom)]
@@ -2772,7 +2772,7 @@ class MalissExecutor(DefaultExecutor):
         return True
 
     def HasMalissLinkFaceup(self):
-        return any(c is not None and c.IsFaceup() and c.HasSetcode(0x1bf) and c.HasType(CardType.Link)
+        return any(c is not None and c.IsFaceup() and c.HasSetcode(0x1b9) and c.HasType(CardType.Link)
                    for c in self.Bot.GetMonsters())
 
     def CanReachAlliedNow(self):
@@ -3262,13 +3262,13 @@ class MalissExecutor(DefaultExecutor):
             if h is not None:
                 return h
         fieldP = _min_by([c for c in self.Bot.GetMonsters()
-                          if c is not None and c.HasSetcode(0x1bf) and not c.HasType(CardType.Link)],
+                          if c is not None and c.HasSetcode(0x1b9) and not c.HasType(CardType.Link)],
                          key=lambda c: c.Attack)
         if fieldP is not None:
             return fieldP
         avoid = [CardId.MalissQ_HeartsCrypter, CardId.MalissQ_WhiteBinder, CardId.MalissQ_RedRansom]
         weakLink = _min_by([c for c in self.Bot.GetMonsters()
-                            if c is not None and c.HasSetcode(0x1bf) and c.HasType(CardType.Link) and c.Id not in avoid],
+                            if c is not None and c.HasSetcode(0x1b9) and c.HasType(CardType.Link) and c.Id not in avoid],
                            key=lambda c: c.Attack)
         return weakLink
 
