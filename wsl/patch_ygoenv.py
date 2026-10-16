@@ -281,6 +281,15 @@ PATCHES = [
      "                    \"max_multi_select\"_.Bind(5), \"record\"_.Bind(false),\n"
      "                    \"lite\"_.Bind(false), \"duel_seed\"_.Bind(int64_t(-1)),\n"
      "                    \"shuffle2\"_.Bind(true));"),
+    # Effect descriptions of activation options (WindBot's ActivateDescription): idle activations, chains.
+    ("edopro/edopro.h",
+     "          option.push_back('a' + activate_count[spec] - 1);\n        }\n        options_.push_back(option);\n",
+     "          option.push_back('a' + activate_count[spec] - 1);\n        }\n        options_.push_back(option);\n"
+     "        ygosim_desc_[option] = data;\n"),
+    ("edopro/edopro.h",
+     "      for (const auto &spec : chain_specs) {\n        options_.push_back(spec);\n      }\n",
+     "      for (size_t k = 0; k < chain_specs.size(); ++k) {\n        options_.push_back(chain_specs[k]);\n"
+     "        ygosim_desc_[chain_specs[k]] = descs[k];\n      }\n"),
     # Remember which card a position prompt is for: the option strings ("1".."4") don't name it.
     ("edopro/edopro.h", "      auto code = read_u32();\n      auto valid_pos = read_u8();\n",
      "      auto code = read_u32();\n      auto valid_pos = read_u8();\n      ygosim_pos_code_ = code;\n"),
@@ -296,6 +305,17 @@ PATCHES = [
      "        \"info:board_\"_.Bind(Spec<int>({2, 7})),\n"
      "        \"info:field_codes_\"_.Bind(Spec<int>({2, 13})),\n"
      "        \"info:field_stats_\"_.Bind(Spec<int>({2, 7, 3})),\n"
+     "        \"info:zone_cards_\"_.Bind(Spec<int>({2, 16, 6})),\n"
+     "        \"info:grave_codes_\"_.Bind(Spec<int>({2, 40})),\n"
+     "        \"info:banished_codes_\"_.Bind(Spec<int>({2, 40})),\n"
+     "        \"info:deck_codes_\"_.Bind(Spec<int>({2, 60})),\n"
+     "        \"info:extra_codes_\"_.Bind(Spec<int>({2, 20})),\n"
+     "        \"info:phase\"_.Bind(Spec<int>({})),\n"
+     "        \"info:chain_\"_.Bind(Spec<int>({8, 3})),\n"
+     "        \"info:chain_targets_\"_.Bind(Spec<int>({4})),\n"
+     "        \"info:summoned_\"_.Bind(Spec<int>({5, 2})),\n"
+     "        \"info:option_zone_\"_.Bind(Spec<int>({conf[\"max_options\"_]})),\n"
+     "        \"info:option_desc_\"_.Bind(Spec<int>({conf[\"max_options\"_]})),\n"
      "        \"info:hand_codes_\"_.Bind(Spec<int>({2, 15})),\n"
      "        \"info:public_codes_\"_.Bind(Spec<int>({2, 40})),\n"
      "        \"info:option_kinds_\"_.Bind(Spec<uint8_t>({conf[\"max_options\"_]})),\n"

@@ -74,6 +74,7 @@
   }
 
   bool ygosim_handle_extra() {
+    ygosim_track_message();  // goldfish_info.inc: chain / summon context, read without consuming
     switch (msg_) {
     case MSG_WAITING: case MSG_START: case MSG_UPDATE_DATA: case MSG_UPDATE_CARD:
     case MSG_REQUEST_DECK: case MSG_REFRESH_DECK: case MSG_SWAP_GRAVE_DECK:

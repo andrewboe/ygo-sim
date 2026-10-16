@@ -41,7 +41,10 @@ import card_handlers  # noqa: E402
 
 INFO_KEYS = ("num_options", "option_kinds_", "option_hash_", "option_card_", "option_act_", "to_play",
              "turn", "turn_player", "msg", "lp_", "field_codes_", "field_stats_", "hand_codes_", "public_codes_",
-             "board_")
+             "board_",
+             # context for the card handlers' WindBot executors (windbot.build_views)
+             "zone_cards_", "grave_codes_", "banished_codes_", "deck_codes_", "extra_codes_", "phase", "chain_",
+             "chain_targets_", "summoned_", "option_zone_", "option_desc_")
 WIN = 100.0
 MAX_TURN_STEPS = 400   # decisions within one searched turn
 YESNO = (12, 13)       # MSG_SELECT_EFFECTYN, MSG_SELECT_YESNO
@@ -513,6 +516,7 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
     belief: before `decider`'s first decision after `history`, each env re-deals what the decider
     can't see from the belief (belief.py), so search can't use hidden cards)."""
     _, info = envs.reset()
+    card_handlers.reset(k)  # every env restarts the game: fresh executor state
     info = {key: info[key].copy() for key in INFO_KEYS}
     out = [TurnRollout() for _ in range(k)]
     active = np.ones(k, dtype=bool)
@@ -614,6 +618,8 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
                 acts[i] = respond(info, i, n, kinds, tags, id_to_code, last_turn_act[i],
                                   last_card[i, int(info["to_play"][i])], last_card[i, 1 - int(info["to_play"][i])])
             last_actor[i] = int(info["to_play"][i])
+            if card_handlers.ENABLED and int(acts[i]) < n:  # keep the chosen option's executor side effects
+                card_handlers.chosen(int(i), int(info["to_play"][i]), int(acts[i]))
             if int(acts[i]) < n and int(info["msg"][i]) in (BATTLECMD, IDLE, 12, 13, CHAIN) and                     int(info["option_card_"][i][acts[i]]):
                 last_card[i, int(info["to_play"][i])] = int(info["option_card_"][i][acts[i]])
             out[i].actions.append(int(acts[i]) % REPLAY)
@@ -814,6 +820,7 @@ def main():
 
     names = load(args.first)
     load(args.second)
+    card_handlers.set_decks(args.first, args.second)
     tags = all_tags()
     id_to_code = [0] + [int(l) for l in open(os.path.expanduser("~/ygo/run/code_list.txt")) if l.strip()]
     envs = ygoenv.make(task_id="EDOPro-v0", env_type="gymnasium", num_envs=args.rollouts,
