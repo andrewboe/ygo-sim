@@ -79,12 +79,12 @@ PATCHES = [
     ("edopro/edopro.h", "  int GetSuitableReturn(uint32_t maxseq, uint32_t size) {\n",
      "  int GetSuitableReturn(uint32_t maxseq, uint32_t size) {\n"
      "    if (maxseq < 256) {\n      return 2;  // ygosim\n    }\n"),
-    # Select-sum: respect the min/max selected-card count the core enforces (mode 0), ...
+    # Select-sum: respect the min/max selected-card count the core enforces (mode 0), and walk
+    # the subsets lazily instead of materialising all 2^n of them up front (bad_alloc), ...
     ("edopro/edopro.h",
      "      std::vector<std::vector<int>> combs =\n"
      "          combinations_with_weight2(card_levels, expected, true);\n",
-     "      std::vector<std::vector<int>> combs =\n"
-     "          combinations_with_weight2(card_levels, expected, true);\n"
+     "      std::vector<std::vector<int>> combs;\n"
      + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "select_sum_filter.inc")).read()),
     # ... which also makes ygo-agent's restrictions on select-sum shapes unnecessary ...
     ("edopro/edopro.h",
