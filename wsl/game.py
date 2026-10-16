@@ -44,7 +44,7 @@ INFO_KEYS = ("num_options", "option_kinds_", "option_hash_", "option_card_", "op
              "board_",
              # context for the card handlers' WindBot executors (windbot.build_views)
              "zone_cards_", "grave_codes_", "banished_codes_", "deck_codes_", "extra_codes_", "phase", "chain_",
-             "chain_targets_", "summoned_", "option_zone_", "option_desc_")
+             "chain_targets_", "summoned_", "option_zone_", "option_desc_", "resolved_")
 WIN = 100.0
 MAX_TURN_STEPS = 400   # decisions within one searched turn
 YESNO = (12, 13)       # MSG_SELECT_EFFECTYN, MSG_SELECT_YESNO

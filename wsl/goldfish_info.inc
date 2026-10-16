@@ -8,8 +8,16 @@
   uint32_t ygosim_pos_code_ = 0;  // card of the pending MSG_SELECT_POSITION
   // Duel context the lite env never parses (WindBot's Duel.CurrentChain, ChainTargets, LastSummonedCards),
   // recorded by peeking messages in ygosim_track_message without consuming them.
-  struct YgosimLink { uint32_t code; uint8_t controller; uint8_t location; uint32_t sequence; };
+  struct YgosimLink {
+    uint32_t code;
+    uint8_t controller;
+    uint8_t location;
+    uint32_t sequence;
+    uint32_t target = 0;   // first card it targeted
+    bool negated = false;  // activation negated or effect disabled
+  };
   std::vector<YgosimLink> ygosim_chain_;               // the chain being built or resolved, link 1 first
+  std::vector<YgosimLink> ygosim_resolved_;            // links resolved this turn, in order
   std::vector<uint32_t> ygosim_chain_targets_;         // targets of the latest chain link
   std::vector<std::pair<uint32_t, uint8_t>> ygosim_summoned_;  // last summon group: (code, controller)
   bool ygosim_summon_done_ = true;
@@ -27,6 +35,7 @@
     try {
       switch (msg_) {
       case MSG_START:
+        ygosim_resolved_.clear();
         ygosim_chain_.clear();
         ygosim_chain_targets_.clear();
         ygosim_summoned_.clear();
@@ -43,11 +52,31 @@
         ygosim_chain_.clear();
         ygosim_chain_targets_.clear();
         break;
+      case MSG_NEW_TURN:
+        ygosim_resolved_.clear();
+        break;
+      case MSG_CHAIN_NEGATED: case MSG_CHAIN_DISABLED: {
+        uint8_t ct = read_u8();
+        if (ct >= 1 && ct <= ygosim_chain_.size()) {
+          ygosim_chain_[ct - 1].negated = true;
+        }
+        break;
+      }
+      case MSG_CHAIN_SOLVED: {
+        uint8_t ct = read_u8();
+        if (ct >= 1 && ct <= ygosim_chain_.size() && ygosim_resolved_.size() < 16) {
+          ygosim_resolved_.push_back(ygosim_chain_[ct - 1]);
+        }
+        break;
+      }
       case MSG_BECOME_TARGET: {
         auto count = compat_read<uint8_t, uint32_t>();
         for (uint32_t k = 0; k < count; ++k) {
           auto li = read_loc_info();
           ygosim_chain_targets_.push_back(get_card(li.controler, li.location, li.sequence).code_);
+        }
+        if (!ygosim_chain_.empty() && !ygosim_chain_.back().target && !ygosim_chain_targets_.empty()) {
+          ygosim_chain_.back().target = ygosim_chain_targets_.front();
         }
         break;
       }
@@ -259,6 +288,13 @@
       state["info:chain_"_](k, 0) = static_cast<int>(ygosim_chain_[k].code);
       state["info:chain_"_](k, 1) = ygosim_chain_[k].controller;
       state["info:chain_"_](k, 2) = ygosim_chain_[k].location;
+      state["info:chain_"_](k, 3) = static_cast<int>(ygosim_chain_[k].target);
+    }
+    for (int k = 0; k < std::min<int>(ygosim_resolved_.size(), 16); ++k) {
+      state["info:resolved_"_](k, 0) = static_cast<int>(ygosim_resolved_[k].code);
+      state["info:resolved_"_](k, 1) = ygosim_resolved_[k].controller;
+      state["info:resolved_"_](k, 2) = ygosim_resolved_[k].negated;
+      state["info:resolved_"_](k, 3) = static_cast<int>(ygosim_resolved_[k].target);
     }
     for (int k = 0; k < std::min<int>(ygosim_chain_targets_.size(), 4); ++k) {
       state["info:chain_targets_"_][k] = static_cast<int>(ygosim_chain_targets_[k]);
