@@ -281,6 +281,9 @@ PATCHES = [
      "                    \"max_multi_select\"_.Bind(5), \"record\"_.Bind(false),\n"
      "                    \"lite\"_.Bind(false), \"duel_seed\"_.Bind(int64_t(-1)),\n"
      "                    \"shuffle2\"_.Bind(true));"),
+    # Remember which card a position prompt is for: the option strings ("1".."4") don't name it.
+    ("edopro/edopro.h", "      auto code = read_u32();\n      auto valid_pos = read_u8();\n",
+     "      auto code = read_u32();\n      auto valid_pos = read_u8();\n      ygosim_pos_code_ = code;\n"),
     ("edopro/edopro.h", "      load_deck(i);\n",
      "      load_deck(i, i != 1 || shuffle2_);  // ygosim: stacked opponent deck for controlled hands\n"),
     ("edopro/edopro.h",
@@ -292,6 +295,7 @@ PATCHES = [
      "        \"info:msg\"_.Bind(Spec<int>({})),\n"
      "        \"info:board_\"_.Bind(Spec<int>({2, 7})),\n"
      "        \"info:field_codes_\"_.Bind(Spec<int>({2, 13})),\n"
+     "        \"info:field_stats_\"_.Bind(Spec<int>({2, 7, 3})),\n"
      "        \"info:hand_codes_\"_.Bind(Spec<int>({2, 15})),\n"
      "        \"info:public_codes_\"_.Bind(Spec<int>({2, 40})),\n"
      "        \"info:option_kinds_\"_.Bind(Spec<uint8_t>({conf[\"max_options\"_]})),\n"

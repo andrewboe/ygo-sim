@@ -36,13 +36,17 @@ from belief import LOC_HAND, REDEAL  # noqa: E402
 from goldfish import (CHAIN, KIND_ACTION, KIND_END, KIND_PASS, KIND_PHASE, MAX_OPTIONS, PRIOR, REPLAY, adapt,  # noqa: E402
                       load, sample, set_opening)
 from card_tags import all_tags  # noqa: E402
+from board import POS_FACEDOWN, POS_FACEUP_ATTACK, can_win_battle, position_choice, zero_atk_attacker  # noqa: E402,F401
 
 INFO_KEYS = ("num_options", "option_kinds_", "option_hash_", "option_card_", "option_act_", "to_play",
-             "turn", "turn_player", "msg", "lp_", "field_codes_", "hand_codes_", "public_codes_", "board_")
+             "turn", "turn_player", "msg", "lp_", "field_codes_", "field_stats_", "hand_codes_", "public_codes_",
+             "board_")
 WIN = 100.0
 MAX_TURN_STEPS = 400   # decisions within one searched turn
 YESNO = (12, 13)       # MSG_SELECT_EFFECTYN, MSG_SELECT_YESNO
 IDLE = 11              # MSG_SELECT_IDLECMD
+BATTLECMD = 10         # MSG_SELECT_BATTLECMD
+POSITION = 19          # MSG_SELECT_POSITION; option letters "1".."4" = face-up ATK, face-down ATK, face-up DEF, set
 # Pilot/engine version, logged with every result; stage2.py and review.py only use matching games.
 # v1 (unlogged): committed rollout transcripts. v2: each player plays its own learned policy.
 CONFIG = "v3-belief"  # v3: hidden information re-dealt from a belief in every search rollout
@@ -182,7 +186,7 @@ OWN_TURN_TRAP_HINT = -2.5  # below the pass prior (-1)
 _HAND_TRAP_MONSTERS = None
 
 
-def hint_priors(cards, acts, n, tags, id_to_code, msg) -> np.ndarray:
+def hint_priors(cards, acts, n, tags, id_to_code, msg, info=None, i=0) -> np.ndarray:
     global _HAND_TRAP_MONSTERS
     if _HAND_TRAP_MONSTERS is None:
         import sqlite3
@@ -192,18 +196,35 @@ def hint_priors(cards, acts, n, tags, id_to_code, msg) -> np.ndarray:
     out = np.zeros(n)
     codes = [id_to_code[int(c)] if 0 < int(c) < len(id_to_code) else 0 for c in cards[:n]]
     battle_trap = msg == IDLE and any(c in own_turn_traps() and tags.get(c, {}).get("hand", 0) > 0 for c in codes)
+    p = int(info["to_play"][i]) if info is not None and CPU_RULES else -1
+    lethal = p >= 0 and msg in (IDLE, BATTLECMD) and can_win_battle(info, i, p)
+    position = position_choice(info, i, n, id_to_code) if p >= 0 and msg == POSITION else None
     for o in range(n):
-        if battle_trap and chr(int(acts[o])) == "b":
+        act = chr(int(acts[o]))
+        if battle_trap and act == "b":
             # Evenly Matched from the hand needs an empty field at the end of the Battle Phase: enter it
             # before anything else is a real line, but the phase prior (-3) made rollouts ~never try it.
             out[o] = 3.0
+        if lethal and act == "b":
+            out[o] += LETHAL_HINT
         cid = int(cards[o])
         code = id_to_code[cid] if 0 < cid < len(id_to_code) else 0
-        if msg == IDLE and code in _HAND_TRAP_MONSTERS and chr(int(acts[o])) in "ms":  # set / normal summon
+        if msg == IDLE and code in _HAND_TRAP_MONSTERS and act in "ms":  # set / normal summon
             out[o] = HINT_PENALTY
-        elif msg == CHAIN and tags.get(code, {}).get("hand", 0) > 0 and chr(int(acts[o])) == "h" and                 code not in own_turn_traps():  # from hand
+        elif msg == CHAIN and tags.get(code, {}).get("hand", 0) > 0 and act == "h" and                 code not in own_turn_traps():  # from hand
             out[o] = OWN_TURN_TRAP_HINT
+        elif msg == BATTLECMD and act in "em" and lethal:  # leaving the Battle Phase with lethal on board
+            out[o] = -LETHAL_HINT
+        elif msg == BATTLECMD and act == "a" and p >= 0 and zero_atk_attacker(info, i, p, code):
+            out[o] = HINT_PENALTY
+        elif o == position:
+            out[o] = POSITION_HINT
     return out
+
+
+CPU_RULES = os.environ.get("YGOSIM_CPU_RULES", "1") != "0"  # 0: off (A/B against the pre-CPU-rules pilot)
+LETHAL_HINT = 4.0    # lifts "to Battle Phase" (phase prior -3) over other actions; leaving battle drops as much
+POSITION_HINT = 3.0  # the CPU's rule picks the default position; search can still overrule it
 
 
 EVAL_WEIGHTS = load_weights()
@@ -415,8 +436,10 @@ def respond(info, i, n, kinds, tags, id_to_code, last_turn_act) -> int:
             return best
     if msg in YESNO and acting:  # own optional triggers (floaters etc.): yes
         return acting[0]
+    if CPU_RULES and msg == POSITION and (o := position_choice(info, i, n, id_to_code)) is not None:
+        return o  # the CPU's position rule (hint_priors)
     if msg != CHAIN and not len(passes):
-        return 0  # forced choice (targets, positions): first option
+        return 0  # forced choice (targets): first option
     return int(passes[0]) if len(passes) else 0
 
 
@@ -515,9 +538,9 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
             elif int(info["to_play"][i]) == player:
                 hashes = info["option_hash_"][i][:n].tolist()
                 priors = np.array([PRIOR[int(x)] for x in kinds])
-                if int(info["msg"][i]) in (IDLE, CHAIN):
+                if int(info["msg"][i]) in (IDLE, CHAIN, BATTLECMD, POSITION):
                     priors = priors + hint_priors(info["option_card_"][i][:n], info["option_act_"][i][:n], n,
-                                                  tags, id_to_code, int(info["msg"][i]))
+                                                  tags, id_to_code, int(info["msg"][i]), info, i)
                 if stop_unseen and int((kinds == 0).sum()) >= 2 and not any(weights.get(h, 0.0) for h in hashes):
                     out[i].unseen_at = len(out[i].actions)
                     active[i] = False
@@ -777,9 +800,10 @@ def main():
                        max_options=MAX_OPTIONS, n_history_actions=16, play_mode="self", lite=True,
                        duel_seed=args.seed, shuffle2=not args.second.startswith("_p2__"))  # stacked test decks
     import json
-    os.makedirs(os.path.dirname(WEIGHTS_FILE), exist_ok=True)
-    pos_log = open(os.path.join(os.path.dirname(WEIGHTS_FILE), "positions.jsonl"), "a")
-    result_log = open(os.path.join(os.path.dirname(WEIGHTS_FILE), "results.jsonl"), "a")
+    log_dir = os.environ.get("YGOSIM_LOG_DIR", os.path.dirname(WEIGHTS_FILE))  # experiments: keep the fit data clean
+    os.makedirs(log_dir, exist_ok=True)
+    pos_log = open(os.path.join(log_dir, "positions.jsonl"), "a")
+    result_log = open(os.path.join(log_dir, "results.jsonl"), "a")
     fitted = EVAL_WEIGHTS is not DEFAULT_WEIGHTS
     weights_tag = json.load(open(WEIGHTS_FILE))["report"] if fitted else None
     print(f"eval weights: {'fitted' if fitted else 'designed defaults'}", flush=True)
@@ -795,6 +819,7 @@ def main():
         pos_log.flush()
         result_log.write(json.dumps({"config": CONFIG, "gens": args.generations, "rollouts": args.rollouts,
                                      "first": args.first, "second": args.second, "game": g, "seed": args.seed,
+                                     "cpu_rules": CPU_RULES,
                                      "winner": r["winner"], "turns": r["turns"], "by": r["by"],
                                      "eval": "fitted" if weights_tag else "default",
                                      "eval_positions": weights_tag["positions"] if weights_tag else 0,

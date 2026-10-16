@@ -5,6 +5,7 @@
   bool ygosim_replay_ = false;  // set per step by the replay flag (action + 1000)
   bool shuffle2_ = true;  // false: player 1's deck is stacked in file order (last main-deck line on top)
   int ygosim_idle_spins_ = 0;
+  uint32_t ygosim_pos_code_ = 0;  // card of the pending MSG_SELECT_POSITION
 
   // Option kinds: 0 = action, 1 = pass/decline (c, f, n...), 2 = end turn (e), 3 = phase move (b, m).
   static uint8_t ygosim_option_kind(int msg, const std::string &opt) {
@@ -122,6 +123,18 @@
             // Face-down cards are flagged by a negative code (set traps count differently).
             bool face_down = c.position_ & POS_FACEDOWN;
             state["info:field_codes_"_](p, n++) = static_cast<int>(c.code_) * (face_down ? -1 : 1);
+            // Monster Zone stats by slot (0-4 main, 5-6 Extra): current ATK, DEF, position. Face-down
+            // monsters keep their stats hidden. Link monsters have no DEF (the query returns markers).
+            if (loc == LOCATION_MZONE && c.sequence_ < 7) {
+              bool link = false;
+              try {
+                link = c_get_card(c.code_).type() & TYPE_LINK;
+              } catch (const std::exception &) {
+              }
+              state["info:field_stats_"_](p, c.sequence_, 0) = face_down ? 0 : c.attack_;
+              state["info:field_stats_"_](p, c.sequence_, 1) = face_down || link ? 0 : c.defense_;
+              state["info:field_stats_"_](p, c.sequence_, 2) = static_cast<int>(c.position_);
+            }
           }
         }
       }
@@ -146,6 +159,9 @@
       state["info:option_kinds_"_][i] = ygosim_option_kind(msg_, options_[i]);
       int32_t card = 0;
       state["info:option_hash_"_][i] = ygosim_option_hash(options_[i], to_play_, &card);
+      if (msg_ == MSG_SELECT_POSITION && card_ids_.count(ygosim_pos_code_)) {
+        card = c_get_card_id(ygosim_pos_code_);  // the card being positioned, not in the option string
+      }
       state["info:option_card_"_][i] = card;
       // Action letter (idle: s summon, c special summon, r reposition, m set monster, t set, v activate).
       state["info:option_act_"_][i] = static_cast<uint8_t>(options_[i].empty() ? 0 : options_[i][0]);
