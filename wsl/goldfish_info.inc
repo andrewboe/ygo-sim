@@ -15,12 +15,49 @@
     uint32_t sequence;
     uint32_t target = 0;   // first card it targeted
     bool negated = false;  // activation negated or effect disabled
+    uint32_t desc = 0;     // effect description (32 bits, see ygosim_desc_)
+    uint8_t player = 0;    // activating player (WindBot's ActivatePlayer)
   };
   std::vector<YgosimLink> ygosim_chain_;               // the chain being built or resolved, link 1 first
   std::vector<YgosimLink> ygosim_resolved_;            // links resolved this turn, in order
   std::vector<uint32_t> ygosim_chain_targets_;         // targets of the latest chain link
   std::vector<std::pair<uint32_t, uint8_t>> ygosim_summoned_;  // last summon group: (code, controller)
   bool ygosim_summon_done_ = true;
+  uint8_t ygosim_solving_ = 0;  // chain link resolving now (MSG_CHAIN_SOLVING), 0 when none
+  // WindBot's message callbacks (OnMove, OnChaining, OnNewPhase...): the messages since the last decisions,
+  // as a ring of [sequence number, message, code, a..e]; each executor replays the ones it hasn't seen.
+  static constexpr int kYgosimEvents = 256;
+  int ygosim_events_[kYgosimEvents][8] = {};
+  int ygosim_event_seq_ = 0;
+  // The pending selection prompt: [hint, min, max, cancelable or finishable, sum value, sum mode] and its
+  // candidates [code, controller, location, sequence, position, param, mandatory] with their option specs.
+  uint32_t ygosim_hint_ = 0;  // last HINT_SELECTMSG
+  int ygosim_select_[6] = {};
+  std::vector<std::array<int, 7>> ygosim_cands_;
+  std::vector<std::string> ygosim_cand_specs_;
+  uint32_t ygosim_prompt_desc_ = 0;              // MSG_SELECT_YESNO / EFFECTYN description
+  std::vector<uint32_t> ygosim_prompt_options_;  // MSG_SELECT_OPTION descriptions
+
+  void ygosim_event(int a, int b = 0, int c = 0, int d = 0, int e = 0, int f = 0) {
+    int *ev = ygosim_events_[ygosim_event_seq_ % kYgosimEvents];
+    ev[0] = ++ygosim_event_seq_;
+    ev[1] = msg_;
+    ev[2] = a, ev[3] = b, ev[4] = c, ev[5] = d, ev[6] = e, ev[7] = f;
+  }
+
+  void ygosim_add_candidate(PlayerId player, uint32_t code, uint8_t ctl, uint8_t loc, uint32_t seq, uint32_t pos,
+                            uint32_t param, bool mandatory) {
+    ygosim_cands_.push_back({static_cast<int>(code), ctl, loc, static_cast<int>(seq), static_cast<int>(pos),
+                             static_cast<int>(param), mandatory});
+    ygosim_cand_specs_.push_back(ls_to_spec(loc, seq, (loc & LOCATION_OVERLAY) ? pos : 0, player != ctl));
+  }
+
+  void ygosim_new_prompt(int hint, int min, int max, int cancel, int sum = 0, int mode = 0) {
+    ygosim_select_[0] = hint, ygosim_select_[1] = min, ygosim_select_[2] = max;
+    ygosim_select_[3] = cancel, ygosim_select_[4] = sum, ygosim_select_[5] = mode;
+    ygosim_cands_.clear();
+    ygosim_cand_specs_.clear();
+  }
   // Deck / Extra Deck contents cost a query per step: only when the card handlers ask (YGOSIM_CONTEXT set).
   const bool ygosim_full_context_ = std::getenv("YGOSIM_CONTEXT") != nullptr;
 
@@ -35,6 +72,8 @@
     try {
       switch (msg_) {
       case MSG_START:
+        ygosim_solving_ = 0;
+        ygosim_hint_ = 0;
         ygosim_resolved_.clear();
         ygosim_chain_.clear();
         ygosim_chain_targets_.clear();
@@ -44,26 +83,178 @@
       case MSG_CHAINING: {
         uint32_t code = read_u32();
         auto li = read_loc_info();
-        ygosim_chain_.push_back({code, li.controler, li.location, li.sequence});
+        uint8_t tc = read_u8();
+        read_u8();
+        compat_read<uint8_t, uint32_t>();
+        uint32_t desc = compat_read<uint32_t, uint64_t>();
+        YgosimLink link{code, li.controler, li.location, li.sequence};
+        link.desc = desc;
+        link.player = tc;
+        ygosim_chain_.push_back(link);
         ygosim_chain_targets_.clear();
+        ygosim_event(code, li.controler, li.location, li.sequence, tc, static_cast<int>(desc));
         break;
       }
       case MSG_CHAIN_END:
         ygosim_chain_.clear();
         ygosim_chain_targets_.clear();
+        ygosim_solving_ = 0;
+        ygosim_event(0);
         break;
       case MSG_NEW_TURN:
         ygosim_resolved_.clear();
+        ygosim_event(0, read_u8());
+        break;
+      case MSG_NEW_PHASE:
+        ygosim_hint_ = 0;
+        ygosim_event(0, read_u16());
+        break;
+      case MSG_CHAIN_SOLVING:
+        ygosim_solving_ = read_u8();
+        ygosim_event(0, ygosim_solving_);
         break;
       case MSG_CHAIN_NEGATED: case MSG_CHAIN_DISABLED: {
         uint8_t ct = read_u8();
         if (ct >= 1 && ct <= ygosim_chain_.size()) {
           ygosim_chain_[ct - 1].negated = true;
         }
+        ygosim_event(0, ct);
+        break;
+      }
+      case MSG_MOVE: {
+        uint32_t code = read_u32();
+        auto from = read_loc_info();
+        auto to = read_loc_info();
+        ygosim_event(code, from.controler, from.location, to.controler, to.location,
+                     static_cast<int>(to.sequence | (to.position << 16)));
+        break;
+      }
+      case MSG_POS_CHANGE: {
+        uint32_t code = read_u32();
+        uint8_t ctl = read_u8(), loc = read_u8(), seq = read_u8(), prev = read_u8(), cur = read_u8();
+        ygosim_event(code, ctl, loc, seq, prev, cur);
+        break;
+      }
+      case MSG_HINT: {
+        uint8_t type = read_u8();
+        read_u8();
+        uint32_t value = compat_read<uint32_t, uint64_t>();
+        if (type == HINT_SELECTMSG) {
+          ygosim_hint_ = value;
+        }
+        break;
+      }
+      case MSG_SELECT_CARD: {
+        auto player = read_u8();
+        int cancelable = read_u8();
+        int min = compat_read<uint8_t, uint32_t>();
+        int max = compat_read<uint8_t, uint32_t>();
+        ygosim_new_prompt(ygosim_hint_, min, max, cancelable);
+        ygosim_hint_ = 0;
+        uint32_t size = compat_read<uint8_t, uint32_t>();
+        for (uint32_t k = 0; k < size; ++k) {
+          uint32_t code = read_u32();
+          auto li = read_loc_info();
+          ygosim_add_candidate(player, code, li.controler, li.location, li.sequence, li.position, 0, false);
+        }
+        break;
+      }
+      case MSG_SELECT_UNSELECT_CARD: {  // the hint stays: Lua helpers reuse it for each pick
+        auto player = read_u8();
+        int finishable = read_u8();
+        int cancelable = read_u8();
+        int min = compat_read<uint8_t, uint32_t>();
+        int max = compat_read<uint8_t, uint32_t>();
+        ygosim_new_prompt(ygosim_hint_, min, max, finishable | (cancelable << 1));
+        uint32_t size = compat_read<uint8_t, uint32_t>();
+        for (uint32_t k = 0; k < size; ++k) {
+          uint32_t code = read_u32();
+          auto li = read_loc_info();
+          ygosim_add_candidate(player, code, li.controler, li.location, li.sequence, li.position, 0, false);
+        }
+        break;
+      }
+      case MSG_SELECT_TRIBUTE: {
+        auto player = read_u8();
+        int cancelable = read_u8();
+        int min = compat_read<uint8_t, uint32_t>();
+        int max = compat_read<uint8_t, uint32_t>();
+        ygosim_new_prompt(ygosim_hint_, min, max, cancelable);
+        ygosim_hint_ = 0;
+        uint32_t size = compat_read<uint8_t, uint32_t>();
+        for (uint32_t k = 0; k < size; ++k) {
+          uint32_t code = read_u32();
+          uint8_t ctl = read_u8();
+          uint8_t loc = read_u8();
+          uint32_t seq = compat_read<uint8_t, uint32_t>();
+          uint8_t param = read_u8();
+          ygosim_add_candidate(player, code, ctl, loc, seq, 0, param, false);
+        }
+        break;
+      }
+      case MSG_SELECT_SUM: {
+        uint8_t player, mode;
+        if (compat_mode_) {
+          mode = read_u8();
+          player = read_u8();
+        } else {
+          player = read_u8();
+          mode = read_u8();
+        }
+        int val = read_u32();
+        int min = compat_read<uint8_t, uint32_t>();
+        int max = compat_read<uint8_t, uint32_t>();
+        ygosim_new_prompt(ygosim_hint_, min, max, 0, val, mode);
+        ygosim_hint_ = 0;
+        for (int group = 0; group < 2; ++group) {
+          uint32_t size = compat_read<uint8_t, uint32_t>();
+          for (uint32_t k = 0; k < size; ++k) {
+            uint32_t code = read_u32();
+            uint8_t ctl = read_u8();
+            uint8_t loc = read_u8();
+            uint32_t seq = 0;
+            if (compat_mode_) {
+              seq = read_u8();
+            } else {
+              seq = read_u32();
+              read_u32();
+            }
+            uint32_t param = read_u32();
+            ygosim_add_candidate(player, code, ctl, loc, seq, 0, param, group == 0);
+          }
+        }
+        break;
+      }
+      case MSG_SELECT_PLACE: case MSG_SELECT_DISFIELD: {  // WindBot passes the hint as the card id
+        read_u8();
+        int count = read_u8();
+        uint32_t flag = read_u32();
+        ygosim_new_prompt(ygosim_hint_, static_cast<int>(~flag), count, 0);
+        ygosim_hint_ = 0;
+        break;
+      }
+      case MSG_SELECT_YESNO:
+        read_u8();
+        ygosim_prompt_desc_ = compat_read<uint32_t, uint64_t>();
+        break;
+      case MSG_SELECT_EFFECTYN:
+        read_u8();
+        read_u32();
+        read_loc_info();
+        ygosim_prompt_desc_ = compat_read<uint32_t, uint64_t>();
+        break;
+      case MSG_SELECT_OPTION: {
+        read_u8();
+        uint8_t size = read_u8();
+        ygosim_prompt_options_.clear();
+        for (int k = 0; k < size; ++k) {
+          ygosim_prompt_options_.push_back(compat_read<uint32_t, uint64_t>());
+        }
         break;
       }
       case MSG_CHAIN_SOLVED: {
         uint8_t ct = read_u8();
+        ygosim_event(0, ct);
         if (ct >= 1 && ct <= ygosim_chain_.size() && ygosim_resolved_.size() < 16) {
           ygosim_resolved_.push_back(ygosim_chain_[ct - 1]);
         }
@@ -74,6 +265,7 @@
         for (uint32_t k = 0; k < count; ++k) {
           auto li = read_loc_info();
           ygosim_chain_targets_.push_back(get_card(li.controler, li.location, li.sequence).code_);
+          ygosim_event(static_cast<int>(ygosim_chain_targets_.back()), li.controler, li.location, li.sequence);
         }
         if (!ygosim_chain_.empty() && !ygosim_chain_.back().target && !ygosim_chain_targets_.empty()) {
           ygosim_chain_.back().target = ygosim_chain_targets_.front();
@@ -88,10 +280,12 @@
         uint32_t code = read_u32();
         auto li = read_loc_info();
         ygosim_summoned_.push_back({code, li.controler});
+        ygosim_event(code, li.controler, li.location, li.sequence, li.position);
         break;
       }
       case MSG_SUMMONED: case MSG_SPSUMMONED: case MSG_FLIPSUMMONED:
         ygosim_summon_done_ = true;
+        ygosim_event(0);
         break;
       default:
         break;
@@ -289,6 +483,54 @@
       state["info:chain_"_](k, 1) = ygosim_chain_[k].controller;
       state["info:chain_"_](k, 2) = ygosim_chain_[k].location;
       state["info:chain_"_](k, 3) = static_cast<int>(ygosim_chain_[k].target);
+      state["info:chain_"_](k, 4) = static_cast<int>(ygosim_chain_[k].desc);
+      state["info:chain_"_](k, 5) = ygosim_chain_[k].negated;
+      state["info:chain_"_](k, 6) = static_cast<int>(ygosim_chain_[k].sequence);
+      state["info:chain_"_](k, 7) = ygosim_chain_[k].player;
+    }
+    state["info:solving_"_] = ygosim_solving_;
+    if (ygosim_full_context_) {  // WindBot executors only
+      for (int k = 0; k < kYgosimEvents; ++k) {
+        for (int j = 0; j < 8; ++j) {
+          state["info:events_"_](k, j) = ygosim_events_[k][j];
+        }
+      }
+      bool select = msg_ == MSG_SELECT_CARD || msg_ == MSG_SELECT_UNSELECT_CARD || msg_ == MSG_SELECT_TRIBUTE ||
+                    msg_ == MSG_SELECT_SUM || msg_ == MSG_SELECT_PLACE || msg_ == MSG_SELECT_DISFIELD;
+      if (select) {
+        for (int j = 0; j < 6; ++j) {
+          state["info:select_"_][j] = ygosim_select_[j];
+        }
+        for (int k = 0; k < std::min<int>(ygosim_cands_.size(), 64); ++k) {
+          for (int j = 0; j < 7; ++j) {
+            state["info:select_cards_"_](k, j) = ygosim_cands_[k][j];
+          }
+        }
+        // each option's candidates (index + 1), from its space-separated specs ("f" finish has none)
+        int n = std::min<int>(options_.size(), max_options());
+        for (int i = 0; i < n; ++i) {
+          size_t start = 0;
+          int j = 0;
+          while (j < 5) {
+            size_t end = options_[i].find(' ', start);
+            std::string tok = options_[i].substr(start, end == std::string::npos ? std::string::npos : end - start);
+            for (int k = 0; k < std::min<int>(ygosim_cand_specs_.size(), 64); ++k) {
+              if (ygosim_cand_specs_[k] == tok) {
+                state["info:option_combo_"_](i, j++) = k + 1;
+                break;
+              }
+            }
+            if (end == std::string::npos) {
+              break;
+            }
+            start = end + 1;
+          }
+        }
+      }
+      state["info:prompt_desc_"_] = static_cast<int>(ygosim_prompt_desc_);
+      for (int k = 0; k < std::min<int>(ygosim_prompt_options_.size(), 8); ++k) {
+        state["info:prompt_options_"_][k] = static_cast<int>(ygosim_prompt_options_[k]);
+      }
     }
     for (int k = 0; k < std::min<int>(ygosim_resolved_.size(), 16); ++k) {
       state["info:resolved_"_](k, 0) = static_cast<int>(ygosim_resolved_[k].code);
