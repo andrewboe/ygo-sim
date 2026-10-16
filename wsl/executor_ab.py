@@ -3,7 +3,8 @@ searched with the executor's priors off and on, at a small budget, where priors 
 boards per opening (with the watched cards that ended on board) and the means.
 
 Run from ~/ygo/run:  python executor_ab.py DECK OPENINGS ROLLOUTS GENERATIONS [WATCH]
-  OPENINGS: N (openings 0..N-1) or a comma list; WATCH: comma list of passcodes to report on board."""
+  OPENINGS: N (openings 0..N-1) or a comma list; WATCH: comma list of passcodes to report on board.
+  EXECUTOR=module:Class (env) tests that executor instead of the deck's registered one."""
 import os
 import sys
 
@@ -25,6 +26,11 @@ tags = all_tags()
 ids = [0] + [int(l) for l in open(f"{gf.RUN}/code_list.txt") if l.strip()]
 envs = gf.make_pool(deck, K, 1000, opponent="_p2__none")
 ch.set_decks(deck, "_p2__none")
+if os.environ.get("EXECUTOR"):  # EXECUTOR=module:Class tests another executor for the deck than the registry's
+    import importlib
+    module, cls = os.environ["EXECUTOR"].split(":")
+    ch.DECK_EXECUTORS[deck] = getattr(importlib.import_module(module), cls)
+print("executor:", ch.DECK_EXECUTORS.get(deck, ch.DEFAULT_EXECUTOR).__name__)
 
 
 class Hook:
