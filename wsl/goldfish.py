@@ -34,6 +34,9 @@ MAX_OPTIONS = 24
 KIND_ACTION, KIND_PASS, KIND_END, KIND_PHASE = 0, 1, 2, 3
 PRIOR = {KIND_ACTION: 0.0, KIND_PASS: -1.0, KIND_END: -3.0, KIND_PHASE: -3.0}  # logit offsets
 MAX_STEPS = 300  # per rollout; turn-1 combos are far shorter
+# Optional prior source for P1's choices (e.g. the card handlers): an object with reset(k),
+# offsets(info, i, n) -> logit offsets, chosen(i, option). None = the uniform policy above.
+PRIOR_HOOK = None
 REPLAY = 1000  # action + REPLAY: replaying a known line, env skips info for the next state
 INFO_KEYS = ("num_options", "option_kinds_", "option_hash_", "option_card_", "option_act_", "to_play", "turn", "msg",
              "board_", "field_codes_", "hand_codes_")
@@ -62,14 +65,16 @@ class Rollout:
 
 
 def score_board(field_codes, hand_codes, tags) -> float:
-    """Interruptions on board + hand traps in hand, with tiebreaks for resources."""
-    total, n_field = 0.0, 0
+    """Interruptions on board + hand traps in hand, with tiebreaks for resources. Field cards count once
+    per name, as in game.py's board features: two set Mitsurugi Prayers are still one activation."""
+    best, n_field = {}, 0
     for c in field_codes:
         if c:
             n_field += 1
             t = tags.get(abs(int(c)))
             if t:
-                total += t["set"] if c < 0 else t["field"]
+                best[abs(int(c))] = max(best.get(abs(int(c)), 0.0), t["set"] if c < 0 else t["field"])
+    total = sum(best.values())
     hand = [int(c) for c in hand_codes if c]
     total += sum(tags.get(c, {}).get("hand", 0.0) for c in hand)
     return total + 0.1 * len(hand) + 0.02 * n_field
@@ -159,7 +164,10 @@ def rollout_batch(envs, k, weights, tags, rng, prefix=(), p2_plan=(), probe: Pro
     without it, the turn-1 board is scored from card tags.
     """
     _, info = envs.reset()
-    info = {key: info[key].copy() for key in INFO_KEYS}
+    keys = INFO_KEYS if PRIOR_HOOK is None else tuple(k for k, v in info.items() if isinstance(v, np.ndarray))
+    info = {key: info[key].copy() for key in keys}
+    if PRIOR_HOOK is not None:
+        PRIOR_HOOK.reset(k)
     out = [Rollout() for _ in range(k)]
     active = np.ones(k, dtype=bool)
     plan_pos = np.zeros(k, dtype=int)
@@ -212,12 +220,16 @@ def rollout_batch(envs, k, weights, tags, rng, prefix=(), p2_plan=(), probe: Pro
             else:
                 hashes = info["option_hash_"][i][:n].tolist()
                 priors = np.array([PRIOR[int(x)] for x in kinds])
+                if PRIOR_HOOK is not None:
+                    priors = priors + PRIOR_HOOK.offsets(info, i, n)
                 if greedy:  # the strategy's own line: most likely choice everywhere
                     acts[i] = int(np.argmax(np.array([weights[h] for h in hashes]) + priors))
                 else:
                     acts[i], _ = sample(hashes, priors, weights, rng)
                 out[i].trace.append((hashes, priors, int(acts[i])))
             chosen = int(acts[i]) % REPLAY
+            if PRIOR_HOOK is not None and int(info["to_play"][i]) == 0:
+                PRIOR_HOOK.chosen(i, chosen)
             if int(info["to_play"][i]) == 0:
                 p1_decisions[i] += 1
                 if info["option_card_"][i][chosen]:
@@ -227,7 +239,7 @@ def rollout_batch(envs, k, weights, tags, rng, prefix=(), p2_plan=(), probe: Pro
         for j, i in enumerate(step["env_id"]):
             if not active[i]:
                 continue
-            for key in INFO_KEYS:
+            for key in keys:
                 info[key][i] = step[key][j]
             ended = term[j] or trunc[j]
             if probing[i] is None and (ended or step["turn"][j] >= 2):
