@@ -42,7 +42,10 @@ mitsurugi 29/42, sky-striker 30/37.
    and Albaz (for Branded). Not ported: Ryzeal, DarkMagician, Dogmatika (2-6 shared cards with our lists).
    WindBot's lists differ from ours (Sky Striker shares 10 of its 37 cards), and six field decks have no
    WindBot executor, so decks also get executors written from their current lines (docs/windbot_porting.md,
-   "Writing an executor..."): Mitsurugi first.
+   "Writing an executor..."): Mitsurugi, Branded and Maliss so far. Goldfish A/B (best turn-1 board, 30
+   openings, 16x5, interruptions): Mitsurugi 3.02 -> 4.46; Branded 3.08 (Albaz port 3.35) -> 4.68; Maliss
+   3.81 (port 4.24) -> 5.26, and 3.69 (port 4.11) -> 5.43 on held-out openings. The registry runs our own
+   executor where it beats the port.
 4. **Gaps**: Konami-only cards from the specs; cards neither covers stay with the search.
 5. **Validation**: unit tests per executor on built boards, the live firing test, then paired A/Bs big
    enough to mean something (~60 games per arm, overnight), plus review.py flag deltas.

@@ -8,8 +8,8 @@ DECKS = {
     "chaos-ritual__tcg": ("chaos_ritual", "ChaosRitualExecutor"),
     "chaos-ritual__projected": ("chaos_ritual", "ChaosRitualExecutor"),
     "chaos-ritual-ocg__projected": ("chaos_ritual", "ChaosRitualExecutor"),
-    "maliss__tcg": ("maliss", "MalissExecutor"),
-    "branded__tcg": ("albaz", "AlbazExecutor"),
+    "maliss__tcg": ("maliss_tcg", "MalissTcgExecutor"),  # own lines; WindBot's port: windbot_decks.maliss
+    "branded__tcg": ("branded", "BrandedExecutor"),  # own lines; WindBot's Albaz port: windbot_decks.albaz
     "sky-striker__tcg": ("sky_striker", "SkyStrikerExecutor"),
     "mitsurugi__tcg": ("mitsurugi", "MitsurugiExecutor"),
 }

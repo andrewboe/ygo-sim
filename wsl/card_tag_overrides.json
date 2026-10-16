@@ -25,5 +25,46 @@
  "Ame no Habakiri no Mitsurugi": {
   "field": 0.25,
   "why": "not an interruption itself; Level 8 Reptile fuel for Prayers / Great Purification"
+ },
+ "Super Polymerization": {
+  "field": 0.0,
+  "set": 0.75,
+  "why": "Quick-Play: set, it fuses an opponent's monster away on their turn (Albaz / Spellcaster fusions take their monsters as material) and can't be responded to; a face-up copy has already resolved"
+ },
+ "The Fallen & The Virtuous": {
+  "set": 0.75,
+  "why": "Quick-Play: set, it sends an Albaz Fusion from the Extra Deck to destroy 1 face-up card on the opponent's turn"
+ },
+ "Mirrorjade the Iceblade Dragon": {
+  "field": 1.0,
+  "why": "quick banish each turn, and destroys all the opponent's monsters if they remove it: the deck's boss"
+ },
+ "Rindbrumm the Striking Dragon": {
+  "field": 0.75,
+  "why": "its negate only hits Extra Deck monsters' effects"
+ },
+ "Hyperinvoked Aeon": {
+  "field": 0.25,
+  "why": "its quick effect only changes Attributes; the value is the on-summon banish"
+ },
+ "Linguriboh": {
+  "field": 0.25,
+  "why": "quick effect negates only Trap Cards; most opponents' turns give it no target, not a full negate"
+ },
+ "Salamangreat Almiraj": {
+  "field": 0,
+  "why": "quick effect protects your own monster; not an interruption"
+ },
+ "Maliss <P> March Hare": {
+  "field": 0,
+  "why": "quick effect works from the hand (Special Summons itself); on the field it only gives targeting protection"
+ },
+ "Accesscode Talker": {
+  "field": 0,
+  "why": "destroy effect is an ignition effect; 'cannot activate in response' is not a floodgate on the opponent's turn"
+ },
+ "Maliss in the Mirror": {
+  "set": 0.75,
+  "why": "set Quick-Play: negates an opponent's monster on their turn by banishing a Maliss monster you control"
  }
 }
