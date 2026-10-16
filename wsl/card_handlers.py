@@ -19,6 +19,7 @@ import numpy as np
 
 import board
 import windbot
+import windbot_default
 
 ENABLED = os.environ.get("YGOSIM_CARD_HANDLERS", "0") != "0"
 if ENABLED:  # the env adds Deck / Extra Deck contents to info (goldfish_info.inc) only when asked
@@ -141,7 +142,7 @@ def offsets(info, i, n, id_to_code, source_cid=0, opp_cid=0) -> np.ndarray:
 # rest), one instance per env so per-game flags stay with their rollout. windbot.py explains the mapping.
 PICK, ALSO, REJECT = USUALLY, TIEBREAK, -USUALLY
 DECK_EXECUTORS: dict = {}          # deck name -> windbot.Executor subclass
-DEFAULT_EXECUTOR = windbot.Executor  # replaced by the DefaultExecutor port
+DEFAULT_EXECUTOR = windbot_default.GenericExecutor
 _decks = ["", ""]
 _instances: dict = {}               # (env, player) -> executor
 _pending: dict = {}                 # (env, player) -> {option: executor state if that option is chosen}
@@ -181,6 +182,15 @@ def _card_for(bot, code, act, zone):
     return windbot.Card(code, windbot.CardLocation.Hand) if code else None
 
 
+def _enemy_card_for(enemy, code, zone):
+    """The enemy's field Card a selection candidate names ("o" options), by zone when the option has one; a
+    face-down card (hidden from the bot, Id 0) only by zone."""
+    cards = [c for c in enemy.MonsterZone + enemy.SpellZone if c is not None and c.Id in (code, 0)]
+    at_zone = [c for c in cards if zone and c.Sequence == zone - 1]
+    return next((c for c in at_zone if c.Id == code), at_zone[0] if at_zone else
+                next((c for c in cards if c.Id == code), None))
+
+
 def _matches(pref, card, code):
     if isinstance(pref, windbot.Card):
         return card is not None and pref.Id == card.Id and pref.Controller == card.Controller and             pref.Location == card.Location and pref.Sequence == card.Sequence
@@ -194,12 +204,20 @@ def windbot_offsets(info, i, n, id_to_code) -> np.ndarray:
         return out
     p = int(info["to_play"][i])
     ex = _executor(i, p)
-    turn = int(info["turn"][i])
-    if ex._turn != turn:
-        ex._turn = turn
-        ex.OnNewTurn()
     bot, enemy, duel = windbot.build_views(info, i, p)
     ex.Bot, ex.Enemy, ex.Duel, ex.Util = bot, enemy, duel, windbot.Util(bot, enemy, duel)
+    turn = int(info["turn"][i])
+    if ex._turn != turn:  # after the views: OnNewTurn reads Duel.Turn
+        ex._turn = turn
+        ex.OnNewTurn()
+    if hasattr(ex, "OnUpdate"):  # chain links resolved since the last decision (OnChainSolved)
+        ex.OnUpdate()
+    # unused selections expire like WindBot's (new phase, chain end); an attack target lives for one attack
+    # (the env answers single-target prompts itself, so a queued target may never be asked for)
+    phase, chain_len = (turn, duel.Phase), len(duel.CurrentChain)
+    if getattr(ex, "_phase", None) != phase or (getattr(ex, "_chain_len", 0) and not chain_len) or msg == windbot.BATTLECMD:
+        ex.AI.Clear()
+    ex._phase, ex._chain_len = phase, chain_len
     code = lambda o: id_to_code[int(info["option_card_"][i][o])] if 0 < int(info["option_card_"][i][o]) < len(id_to_code) else 0
     acts = [chr(int(a)) for a in info["option_act_"][i][:n]]
     zones = [int(z) for z in info["option_zone_"][i][:n]]
@@ -232,15 +250,18 @@ def windbot_offsets(info, i, n, id_to_code) -> np.ndarray:
             out[o] = PICK if o == best else ALSO
         for o in rejected:
             out[o] = REJECT
+        if msg == windbot.BATTLECMD and best is None and hasattr(ex, "BattleChoice"):
+            _battle(ex, base, out, pending, bot, acts, zones, code, n)
     elif msg in SELECTS and (ex.AI.cards or ex.AI.materials):
         prefs = ex.AI.cards[0] if ex.AI.cards else ex.AI.materials[0]
         for o in range(n):
-            card = _card_for(bot, code(o), acts[o], zones[o]) if acts[o] not in "o" else None
+            card = _card_for(bot, code(o), acts[o], zones[o]) if acts[o] != "o" else _enemy_card_for(enemy, code(o), zones[o])
             k = next((k for k, pr in enumerate(prefs) if _matches(pr, card, code(o))), None)
             if k is not None:
                 out[o] = PICK + TIEBREAK * (len(prefs) - k) / len(prefs)
-    elif msg == windbot.POSITION and ex.AI.positions:
-        want = windbot._POSITION_LETTER.get(ex.AI.positions[0])
+    elif msg == windbot.POSITION and (ex.AI.positions or hasattr(ex, "OnSelectPosition")):
+        pos = ex.AI.positions[0] if ex.AI.positions else ex.OnSelectPosition(code(0), None)
+        want = windbot._POSITION_LETTER.get(pos)
         out[:] = [PICK if a == want else 0.0 for a in acts]
     elif msg == windbot.YESNO and ex.AI.yesno:
         out[:] = [PICK if (int(kinds[o]) != 1) == ex.AI.yesno[0] else 0.0 for o in range(n)]
@@ -250,6 +271,33 @@ def windbot_offsets(info, i, n, id_to_code) -> np.ndarray:
         out[:] = [PICK if zones[o] and ex.AI.places[0] >> (zones[o] - 1) & 1 else 0.0 for o in range(n)]
     _pending[(i, p)] = (msg, pending)
     return out
+
+
+def _battle(ex, base, out, pending, bot, acts, zones, code, n):
+    """No battle row fired: WindBot's attack choice (DefaultExecutor.BattleChoice). The chosen attack gets PICK;
+    every attack option queues the target OnSelectAttackTarget would pick, for the target prompt; with no
+    attack worth making, leaving the Battle Phase gets PICK."""
+    attacks = {o: _card_for(bot, code(o), "m", zones[o]) for o in range(n) if acts[o] == "a"}
+    attacks = {o: c for o, c in attacks.items() if c is not None}
+    if not attacks:
+        return
+    choice = ex.BattleChoice(list(attacks.values()))
+    if choice is None:
+        leave = next((o for o in range(n) if acts[o] == "m"), next((o for o in range(n) if acts[o] == "e"), None))
+        if leave is not None:
+            out[leave] = PICK
+        return
+    for o, attacker in attacks.items():
+        if attacker is choice[0]:
+            out[o] = PICK
+            target = choice[1]
+        else:
+            result = ex.OnSelectAttackTarget(attacker, ex.Enemy.GetMonsters())
+            target = result[1] if result else None
+        if target is not None:
+            ex.AI.SelectCard(target)
+            pending[o] = copy.deepcopy(ex._state())
+            ex.__dict__.update(copy.deepcopy(base))
 
 
 def chosen(i, p, o):

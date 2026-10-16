@@ -91,6 +91,10 @@ class Card:
         self.Setcodes = [(setcode >> (16 * k)) & 0xFFFF for k in range(4) if (setcode >> (16 * k)) & 0xFFFF]
         if self.Location not in (CardLocation.MonsterZone,):  # stats off the field: the printed ones
             self.Attack, self.Defense, self.Level = max(atk, 0), max(dfn, 0), level & 0xFF
+        self.RealPower = self.Attack      # battle power the battle rules adjust (WindBot's RealPower)
+        self.IsLastAttacker = False
+        self.IsSpecialSummoned = False    # not exposed by the env
+        self.LastLocation = 0             # not exposed by the env
 
     @property
     def Overlays(self) -> list:
@@ -157,6 +161,24 @@ class Card:
 
     def IsMonsterAttackWhileInDefPos(self):
         return self.IsFaceup() and self.IsDefense() and self.Id in LIST["DefenseAttackMonster"]
+
+    def IsShouldNotBeSpellTrapTarget(self):
+        return self.IsFaceup() and self.Id in LIST["ShouldNotBeSpellTrapTarget"]
+
+    def IsShouldNotBeMonsterTarget(self):
+        return self.IsFaceup() and self.Id in LIST["ShouldNotBeMonsterTarget"]
+
+    def IsMonsterHasPreventActivationEffectInBattle(self):
+        return self.Id in LIST["PreventActivationEffectInBattle"]
+
+    def IsMonsterShouldBeDisabledBeforeItUseEffect(self):
+        return self.IsFaceup() and self.Id in LIST["ShouldBeDisabledBeforeItUseEffectMonster"]
+
+    def IsExtraCard(self):
+        return self.HasType(CardType.Fusion | CardType.Synchro | CardType.Xyz | CardType.Link)
+
+    def IsCanRevive(self):
+        return self.IsMonster()  # summoning conditions aren't exposed
 
     def IsShouldNotBeTarget(self):
         return self.IsFaceup() and not self.HasType(CardType.Normal) and self.Id in LIST["ShouldNotBeTarget"]
@@ -280,8 +302,25 @@ class Field:
     def HasInHandOrInSpellZoneOrInGraveyard(self, ids):
         return self.HasInHand(ids) or self.HasInSpellZone(ids) or self.HasInGraveyard(ids)
 
+    def HasInPendulumZone(self, ids, faceUp=False):
+        return any(c is not None and c.IsCode(ids) and c.HasType(CardType.Pendulum) and (not faceUp or c.IsFaceup())
+                   for c in (self.SpellZone[0], self.SpellZone[4]))
+
     def HasAttackingMonster(self):
         return any(c.IsAttack() for c in self.GetMonsters())
+
+
+class ChainInfo:
+    """One chain link: the card (RelatedCard), who activated it (ActivatePlayer), its first target."""
+
+    def __init__(self, card, target=None, negated=False):
+        self.RelatedCard, self.ActivatePlayer, self.Negated = card, card.Controller, negated
+        self.Targets = [target] if target is not None else []
+
+    def IsCode(self, *ids):
+        return self.RelatedCard.IsCode(*ids)
+
+    IsActivateCode = IsCode
 
 
 @dataclass
@@ -294,6 +333,12 @@ class DuelView:
     ChainTargets: list = field(default_factory=list)   # Card per target of the latest link
     LastSummonedCards: list = field(default_factory=list)
     LastSummonPlayer: int = -1
+    CurrentChainInfo: list = field(default_factory=list)  # ChainInfo per link
+    ResolvedThisTurn: list = field(default_factory=list)  # ChainInfo per resolved link (OnChainSolved)
+
+    @property
+    def SummoningCards(self):
+        return []  # summons in progress aren't exposed separately from LastSummonedCards
 
     @property
     def LastChainPlayer(self) -> int:
@@ -471,6 +516,28 @@ class AIRecorder:
     def SelectOption(self, option):
         self.options.append(option)
 
+    def Clear(self):
+        """GameAI.ClearSelections: WindBot drops unused selections at each new phase and when a chain ends."""
+        for queue in (self.cards, self.materials, self.places, self.positions, self.yesno, self.options):
+            queue.clear()
+
+
+# --- CardContainer queries (WindBot's extension methods on card lists) ----------------------------------
+
+def GetHighestAttackMonster(cards, canBeTarget=False):
+    up = [c for c in cards if c is not None and c.IsFaceup() and (not canBeTarget or not c.IsShouldNotBeTarget())]
+    return max(up, key=lambda c: c.Attack, default=None)
+
+
+def GetFloodgate(cards, canBeTarget=False):
+    return next((c for c in cards if c is not None and c.IsFaceup() and c.IsFloodgate() and
+                 (not canBeTarget or not c.IsShouldNotBeTarget())), None)
+
+
+def GetShouldBeDisabledBeforeItUseEffectMonster(cards, canBeTarget=True):
+    return next((c for c in cards if c is not None and c.IsMonsterShouldBeDisabledBeforeItUseEffect() and
+                 (not canBeTarget or not c.IsShouldNotBeTarget())), None)
+
 
 # --- Views from env info ------------------------------------------------------------------------------
 
@@ -515,8 +582,16 @@ def build_views(info, i, player):
         fields.append(f)
     bot, enemy = fields
     rel = lambda p: 0 if int(p) == player else 1
-    chain = [Card(int(code), int(loc), Controller=rel(ctl)) for code, ctl, loc in info["chain_"][i] if code]
     on_field = {(c.Id, c.Controller): c for f in fields for c in f.GetMonsters() + f.GetSpells() if c.Id}
+
+    def find(code):
+        return on_field.get((code, 0)) or on_field.get((code, 1)) or Card(code, CardLocation.Onfield, Controller=-1)
+
+    links = [(int(code), int(ctl), int(loc), int(tgt)) for code, ctl, loc, tgt in info["chain_"][i] if code]
+    chain = [Card(code, loc, Controller=rel(ctl)) for code, ctl, loc, _ in links]
+    chain_info = [ChainInfo(card, find(tgt) if tgt else None) for card, (_, _, _, tgt) in zip(chain, links)]
+    resolved = [ChainInfo(Card(int(code), CardLocation.Onfield, Controller=rel(ctl)), Card(int(tgt), CardLocation.Onfield)
+                          if tgt else None, bool(neg)) for code, ctl, neg, tgt in info["resolved_"][i] if code]
     targets = []
     for code in info["chain_targets_"][i]:
         if code:
@@ -525,7 +600,8 @@ def build_views(info, i, player):
     summoned = [Card(int(code), CardLocation.MonsterZone, Controller=rel(ctl)) for code, ctl in info["summoned_"][i] if code]
     duel = DuelView(Player=rel(info["turn_player"][i]), Phase=int(info["phase"][i]) or DuelPhase.Main1,
                     Turn=int(info["turn"][i]), CurrentChain=chain, ChainTargets=targets, LastSummonedCards=summoned,
-                    LastSummonPlayer=summoned[-1].Controller if summoned else -1)
+                    LastSummonPlayer=summoned[-1].Controller if summoned else -1,
+                    CurrentChainInfo=chain_info, ResolvedThisTurn=resolved)
     return bot, enemy, duel
 
 

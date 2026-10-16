@@ -20,6 +20,12 @@ def main():
     for path in sorted(glob.glob(os.path.join(root, "Game", "AI", "Enums", "*.cs"))):
         for name, body in ENUM.findall(open(path, encoding="utf-8").read()):
             lists[name] = sorted({int(v) for _, v in MEMBER.findall(body)})
+    # DefaultExecutor's card ids and set codes (the names its default rules use)
+    default = open(os.path.join(root, "Game", "AI", "DefaultExecutor.cs"), encoding="utf-8").read()
+    for cls, key in (("_CardId", "DefaultCardId"), ("_Setcode", "DefaultSetcode")):
+        m = re.search(r"class\s+" + cls + r"\s*\{(.*?)\n\s*\}", default, re.S)
+        if m:
+            lists[key] = {n: int(v, 0) for n, v in re.findall(r"const int (\w+)\s*=\s*(0x[0-9a-fA-F]+|\d+)", m.group(1))}
     commit = subprocess.run(["git", "-C", root, "log", "-1", "--format=%H %cs"], capture_output=True, text=True).stdout.strip()
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "wsl", "windbot_lists.json")
     json.dump({"source": f"IceYGO/windbot {commit} (MIT)", "lists": lists}, open(out, "w"), indent=0)

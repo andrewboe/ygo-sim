@@ -26,8 +26,13 @@ mitsurugi 29/42, sky-striker 30/37.
    WindBot's names, hidden information masked; `card_handlers.py` runs one executor per (env, player),
    scores options by WindBot's first-passing-row rule, keeps side effects (flags, AI.SelectCard queues) only
    for the option actually chosen.
-2. **DefaultExecutor port**: staples used across decks (Ash, Called by the Grave, Imperm, Nibiru, Maxx "C",
-   Veiler, Droll, Ghost Belle, Solemns...) and default reposition / battle-phase rules.
+2. **DefaultExecutor port** (done). `wsl/windbot_default.py`: the Default* staple conditions, on-targeted and
+   negation / search / draw checks, OnChainSolved bookkeeping (Called by the Grave, Lock Bird, Maxx "C" and the
+   Mulcharmys, Mistaken Arrest, Dimension Shifter) from the engine's `resolved_` links, and the battle rules
+   (GameAI's attack choice, OnSelectAttackTarget, OnPreBattleBetween, 0-ATK monsters to Defense).
+   `GenericExecutor` (staple rows, reposition, Spell/Trap sets) runs for decks without a deck executor. At
+   BATTLECMD with no row firing, the attack WindBot would make gets PICK and every attack option queues its
+   target for the target prompt; no worthwhile attack picks leaving the Battle Phase.
 3. **Deck executors**: one module per WindBot executor mapped to field decks (`DECK_EXECUTORS`), in coverage
    order: Elfnote, ChaosRitual, Maliss, SkyStriker, DarkMagician, Ryzeal (Blitzclique builds), then
    Albaz/Dogmatika rules for Branded. Ported rule by rule from IceYGO (MIT, keep attribution).
