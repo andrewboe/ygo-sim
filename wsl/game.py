@@ -661,6 +661,7 @@ def turn_batch(envs, k, history, player, turn, weights, tags, id_to_code, rng, r
 
 
 MAX_REPLANS = 4
+LATE_BOOST = int(os.environ.get("YGOSIM_LATE_BOOST", 1))  # search budget multiplier for turns 3+ (experiment knob)
 OPENING_BOOST = 6    # search budget multiplier for turns 1-2 (6 = 60 gens: +19% live interruptions over 3, 2026-10-12)
 RESTARTS, MIN_RESTART_GENS = 3, 8  # search_turn: independent NRPA runs when the budget allows
 MAX_WINDOWS = 10     # hand-trap timing comparisons per real turn
@@ -786,7 +787,7 @@ def play_game(envs, k, game_seed, max_turns, gens, alpha, tags, id_to_code, name
             break
         # Turns 1-2 (the going-first combo and the going-second break) are the long combo turns:
         # Elfnote reached a real end board only at 3x search; 9x found the same board.
-        budget = gens * OPENING_BOOST if turn <= 2 else gens
+        budget = gens * OPENING_BOOST if turn <= 2 else gens * LATE_BOOST
         best = play_turn(envs, k, history, tp, turn, budget, alpha, tags, id_to_code, rng)
         history = best.actions
         if best.ended:
