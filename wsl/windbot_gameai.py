@@ -8,14 +8,16 @@ at every prompt and falls back like WindBot. Executors call it as self.AI.
 
 decide() turns WindBot's answer into prior offsets over the env's options: the action WindBot would take gets
 PICK; at action prompts every other option whose first matching row passes gets ALSO, options whose rows all
-fail get REJECT. GameAI's last-resort fallbacks ("select the first cards", "pass") count only for deck
-executors (Executor.DECK_EXECUTOR): for the generic executor they would be arbitrary, so the search decides.
+fail get REJECT. GameAI's last-resort fallbacks ("select the first cards", "pass", "end the turn") are arbitrary,
+so where WindBot would only fall back the search decides (YGOSIM_EXECUTOR_FALLBACKS=1 makes them picks for deck
+executors, Executor.DECK_EXECUTOR).
 
 Messages between decisions (MSG_MOVE, CHAINING, CHAIN_SOLVED, NEW_PHASE...) come from the env's event ring and
 are replayed through the executor's callbacks before each decision, against a mirror of the chain state at
 that point; the board in those callbacks is the current one (the env doesn't keep past boards).
 """
 import copy
+import os
 
 import numpy as np
 
@@ -502,7 +504,7 @@ class GameAI:
         selected, self.m_yesno = self.m_yesno, -1
         if selected != -1:
             return selected > 0
-        self.fallback = not self._ex.DECK_EXECUTOR
+        self.fallback = type(self._ex).OnSelectYesNo is wb.Executor.OnSelectYesNo  # the base's "yes" is a default
         return self._ex.OnSelectYesNo(desc)
 
     def OnSelectBattleReplay(self):
@@ -613,6 +615,9 @@ def _what(args):
 # --- driver: one decision of one env --------------------------------------------------------------------
 
 PICK, ALSO, REJECT = 2.5, 0.5, -2.5
+# GameAI's last-resort defaults (first cards, Attack Position, centre zone, pass, end turn) as picks for deck
+# executors. Off by default: in full games they steered play toward arbitrary choices (2026-10-16 audit).
+FALLBACKS = os.environ.get("YGOSIM_EXECUTOR_FALLBACKS", "0") != "0"
 
 
 class _Mirror:
@@ -801,7 +806,7 @@ def decide(ex, info, i, n, id_to_code):
     kinds = [int(k) for k in info["option_kinds_"][i][:n]]
     base = copy.deepcopy(ex._state())
     pending, keep = {}, None
-    deck = ex.DECK_EXECUTOR
+    deck = ex.DECK_EXECUTOR and FALLBACKS
 
     def run(fn):
         """Run a GameAI decision on the current state; return (answer, state after, fell back)."""
