@@ -10,13 +10,13 @@ Pass thresholds are fixed here, before any training run.
 ## Gates (run on the current non-ML pilot first; ML must pass them too)
 | Gate | Test | Pass | Current |
 |---|---|---|---|
-| G1 Seat balance | Going-first win rate, meta-vs-meta games (paired seeds, n≥400) | 58-72% (fail outside 55-75%); hand traps measurably shrink it | 37% (n=60) and mirror 50% (n=12): **fail** |
+| G1 Seat balance | Going-first win rate, meta-vs-meta games (paired seeds, n≥400) | 50-60% (TCG reference: 53.5%, YGOData, n=30,858 DuelingBook ranked; Master Duel WCS 65% is a different format) | 37% (n=60) and mirror 50% (n=12): **fail** |
 | G2 Matchup direction | Sign of matchups that have YGOData cells with n≥200 (re-pulled after BETB) | ≥75% of signs agree; none wrong by >15 pts | not run |
 | G3 Reference boards | 3-5 curated hands per deck from guides, verified in EDOPro: reach the documented end board | ≥80% matched or beaten | not built |
 | G4 Interruption puzzles | Curated positions with a known best response (chokepoint vs bait, Standby Mulcharmy, Evenly timing) | ≥85% correct | partial (S2/S4 suite) |
 | G5 Strength ladder | Paired fixed-seed games vs frozen v0 (today's pilot), a WindBot-only anchor, and previous versions; SPRT or 95% CIs | Beats v0 and the anchors with significance | not built |
 
-G1 failing is the first problem. Real play has going first win about 65% in Master Duel WCS2026, and our
+G1 failing is the first problem. Real TCG play has going first winning 53.5% (YGOData); our
 pilot is well below that, so either going-first boards or defence on the opponent's turn are still too weak.
 ML trained on this pilot would learn the same bias. **Step 1 is to diagnose G1, not to train.**
 
