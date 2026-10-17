@@ -30,3 +30,13 @@ baseline, and against what actually happens once results arrive.
 - The deck-executor A/B (other session) runs until about 2026-10-19 and reports Elfnote going first and its
   Extra Deck reach. The engine and runtime are frozen during it.
 - ML stage on hold until phase C shows the simulator adds value.
+
+## Phase A result (2026-10-17)
+- **Deck baseline:** `python -m ygosim.baseline` (YGOData matchups -> Bo3 -> 200 events of 263 players).
+  - Pre-BETB conversion: Blitzclique 1.44, Fairy Tail 1.27, Maliss/Elfnote/Invoked/L&D variants about 1.0-1.1,
+    Mitsurugi 0.73, Branded 0.58, Sky Striker 0.47.
+  - Decks with no YGOData row (Power Patron, Lunalight, Toon, other) play 50%.
+- **Tuning baseline:** the existing inclusion tables (`ygosim meta`, data/meta/*.inclusion.json: play rate and
+  average copies per card and zone), with dated lists in data/store.json (`ygosim refresh`). Phase C2 compares
+  them at release time and 4-8 weeks after.
+- **Next:** re-read YGOData once post-BETB data appears (its next update), which is the first phase C1 check.
