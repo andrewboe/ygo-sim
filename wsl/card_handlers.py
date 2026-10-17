@@ -22,6 +22,8 @@ import windbot_default
 import windbot_gameai
 
 ENABLED = os.environ.get("YGOSIM_CARD_HANDLERS", "0") != "0"
+# Seats the handlers play for (A/B tests of one deck's rules: the other seat plays without them).
+SEATS = {int(s) for s in os.environ.get("YGOSIM_HANDLER_SEATS", "0,1").split(",") if s.strip()}
 if ENABLED:  # the env adds Deck / Extra Deck contents to info (goldfish_info.inc) only when asked
     os.environ.setdefault("YGOSIM_CONTEXT", "1")
 BATTLECMD, IDLE, EFFECTYN, YESNO, SELECT_CARD, CHAIN, POSITION = 10, 11, 12, 13, 15, 16, 19
@@ -118,7 +120,7 @@ def offsets(info, i, n, id_to_code, source_cid=0, opp_cid=0) -> np.ndarray:
     """Handler offsets for every option of decision i (zeros when no handler has an opinion)."""
     out = np.zeros(n)
     msg = int(info["msg"][i])
-    if not ENABLED:
+    if not ENABLED or int(info["to_play"][i]) not in SEATS:
         return out
     if not (msg in OPTION_MSGS or msg in SELECTS):  # position / place / option prompts: executors only
         return out + windbot_offsets(info, i, n, id_to_code)
@@ -171,7 +173,7 @@ def _executor(i, p):
 
 
 def windbot_offsets(info, i, n, id_to_code) -> np.ndarray:
-    if not ENABLED or not n:
+    if not ENABLED or not n or int(info["to_play"][i]) not in SEATS:
         return np.zeros(n)
     p = int(info["to_play"][i])
     out, pending, keep = windbot_gameai.decide(_executor(i, p), info, i, n, id_to_code)
