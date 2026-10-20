@@ -7,7 +7,7 @@ from typing import Literal
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
-from . import carddata, cardtools, decksave, formatmeta, linkfind
+from . import carddata, cardtools, decksave, formatmeta, linkfind, rulings
 from .formats import DeckInputError, validate_deck as _validate
 
 Format = Literal["tcg_advanced", "genesys"]
@@ -20,9 +20,9 @@ server = MCPServer(
         "Never state card text, ban status, Genesys points or what a card searches from memory: use "
         "card_lookup / search_cards / archetype. Ground 'current meta' claims in meta_snapshot and "
         "meta_inclusion. Run validate_deck before presenting any decklist, and quote the 'data as of' "
-        "date with points or ban status. Card text is the source; these tools do not answer rulings "
-        "questions, so flag cost vs. effect, timing and once-per-turn interactions as unverified and "
-        "point to the card's rulings_links."
+        "date with points or ban status. For rulings (cost vs. effect, timing, once-per-turn, whether "
+        "two cards interact) call card_rulings, ideally with with_card, and quote the official answer; "
+        "if no Q&A covers the case, say the ruling is unverified rather than guessing."
     ),
 )
 
@@ -122,6 +122,17 @@ def meta_inclusion(format: Format, card: str | None = None, deck_type: str | Non
     near misses are suggested)."""
     return _call(_with_meta(formatmeta.meta_inclusion), format, card=card, deck_type=deck_type,
                  days=days, limit=limit)
+
+
+@server.tool(annotations=READ_ONLY)
+def card_rulings(card: str, with_card: str | None = None, query: str | None = None, limit: int = 8) -> dict:
+    """Official FAQ and Q&A rulings for a card (Konami OCG database via YGOResources, cached locally).
+    with_card: only Q&As that involve both cards (best for "does X work with Y" questions).
+    query: only Q&As containing all these words, e.g. "cost banish" or "damage step".
+    Each Q&A has title, question, answer, date and translation status. These are OCG rulings and TCG
+    rulings can differ: quote them, don't extend them past what they cover. Requests are capped per call
+    to respect YGOResources; the note says when more remain."""
+    return _call(rulings.card_rulings, card, with_card=with_card, query=query, limit=limit)
 
 
 @server.tool(annotations=READ_ONLY)

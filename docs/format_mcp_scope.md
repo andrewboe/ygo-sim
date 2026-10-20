@@ -357,3 +357,22 @@ Throughout, the skill requires card facts from tools only, an "as of" date with 
 - **Conclusion:** fine for on-demand, per-card fetches cached in `cards.sqlite` and refreshed through the manifest. Don't bulk-crawl or redistribute the Q&A text. Ask on their Discord before any bulk use.
 
 **Next:** a `card_rulings(card)` tool on that basis. Konami IDs are already stored as `cards.konami_id`.
+
+### Status (2026-10-20): `card_rulings` built
+
+**`card_rulings(card, with_card, query, limit)`** lives in `ygosim/rulings.py`; tests in `tests/test_rulings.py` use a fake YGOResources (55 tests pass in total).
+- **What it returns:**
+  - The card's official FAQ entries (English only; untranslated ones are skipped).
+  - Its Q&As, newest first: title, question, answer, date, translation status and the cards involved.
+  - `<<konami id>>` references replaced by card names, from local cards first, then YGOResources' name index (one request, cached).
+- **`with_card`** keeps only Q&As that list both cards, by intersecting the two cards' `qaIndex`. That's precise, and costs one extra request.
+- **`query`** keeps only Q&As containing every word.
+- **Politeness:**
+  - Requests are on demand only, at most 20 Q&A fetches per call (the note says when more remain).
+  - Everything is cached in the `rul_*` tables in `cards.sqlite`; card rebuilds don't touch them.
+  - At most once a day, `/manifest/<revision>` drops only the entries that changed.
+- **Caveats in every answer:**
+  - These are OCG rulings, and TCG rulings can differ.
+  - Quote them; don't extend them.
+- **Live check:** Called by the Grave with Ash Blossom took 4 requests on the first call and 0 on the repeat.
+- **Network issue on this machine:** the router's DNS (192.168.1.1) intermittently fails to resolve `db.ygoresources.com`, while 1.1.1.1 resolves it. When that happens, the tool returns a clear "request failed" error, and anything already cached keeps working.
