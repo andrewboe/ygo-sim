@@ -143,6 +143,38 @@ def cmd_fit_eval(args):
     print(f"wrote {WEIGHTS}")
 
 
+def cmd_validate(args):
+    import json
+
+    from . import carddata
+    from .formats import validate_deck
+
+    con = carddata.connect()
+    carddata.ensure_fresh(con)
+    text = args.deck if args.deck.lower().startswith("ydke://") else None
+    r = validate_deck(con, args.format, ydk_path=None if text else args.deck, ydk_text=text,
+                      point_cap=args.cap, as_of=args.as_of)
+    if args.json:
+        print(json.dumps(r, ensure_ascii=False, indent=1))
+        return
+    print(r["summary"])
+    for p in r.get("parse_errors", []) + r.get("problems", []):
+        print(f"  ! {p}")
+    for w in r.get("warnings", []):
+        print(f"  ~ {w}")
+    for c in r.get("cards", []):
+        status = f"{c['points']:>3} pts" if "points" in c else c.get("status", "")
+        print(f"  {c['zone']:<5} {c['count']}x {c['name']} ({c['passcode']})  {status}")
+
+
+def cmd_cards_refresh(args):
+    from . import carddata
+
+    con = carddata.connect()
+    print(carddata.ensure_fresh(con, force=args.force))
+    print(carddata.freshness(con))
+
+
 def cmd_variants(args):
     from .variants import discover
 
@@ -331,6 +363,18 @@ def main():
     fe = sub.add_parser("fit-eval", help="fit the game position evaluation from logged game outcomes")
     fe.add_argument("--l2", type=float, default=1.0)
     fe.set_defaults(func=cmd_fit_eval)
+
+    vd = sub.add_parser("validate", help="deck legality for a format: ban status, Genesys points, deck sizes")
+    vd.add_argument("deck", help=".ydk path or ydke:// URL")
+    vd.add_argument("--format", choices=["tcg_advanced", "genesys"], default="tcg_advanced")
+    vd.add_argument("--cap", type=int, help="Genesys point cap (default 100)")
+    vd.add_argument("--as-of", help="release-date check, YYYY-MM-DD (default: today)")
+    vd.add_argument("--json", action="store_true", help="full validate_deck output")
+    vd.set_defaults(func=cmd_validate)
+
+    cr = sub.add_parser("cards-refresh", help="rebuild data/cards.sqlite if YGOProDeck's database changed")
+    cr.add_argument("--force", action="store_true", help="refetch even if the version is unchanged")
+    cr.set_defaults(func=cmd_cards_refresh)
 
     args = parser.parse_args()
     args.func(args)
