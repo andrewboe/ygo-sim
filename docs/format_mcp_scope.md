@@ -320,3 +320,40 @@ Goal: conversations like "build me a Destiny HERO deck for the current Genesys m
 - Only 124 of 374 recent Genesys lists fit today's points. Points must have risen after those events: a 2026-09-27 Sacred Beast top 8 now costs 379. Konami's official Genesys page shows the same values as YGOProDeck.
 
 **Rulings source found:** YGOResources (formerly the YGOrg DB) serves per-card JSON with `faqData` and a `qaIndex`, at `db.ygoresources.com/data/card/<konami_id>`. Its terms of use still need checking before using it in step 3.
+
+### Status (2026-10-20): step 3 started
+
+**`finalize_deck`.** In `ygosim/decksave.py`; tests in `tests/test_decksave.py` (48 tests pass in total).
+- It saves only decks that `validate_deck` passes. Otherwise nothing is written and the problems come back.
+- It writes `data/decks/<slug>.<format>.ydk` (LF line endings) and a `.json` with the `ydke://` URL, a text list, the points or limits breakdown and the data "as of" date.
+- Re-saving the same name keeps the old `.ydk` in `data/decks/history/`.
+- `saved_decks` lists them. Follow-ups pass the `.ydk` path to `validate_deck` or `find_links`.
+- End-to-end check: a real Angelechy Blitzclique Genesys top list validates at exactly 100/100 points, saves, and reloads through `find_links`.
+
+**Bug fixed along the way.** A card named "7" was read as passcode 7. An all-digit query now falls back to a name lookup when no such passcode exists.
+
+**Deckbuilding skill.** `~/.claude/skills/ygo-deckbuilding/SKILL.md`, at user scope like the MCP server. It enforces this order:
+1. Format.
+2. `meta_snapshot`.
+3. `archetype`.
+4. Draft with `search_cards`.
+5. `find_links`.
+6. `validate_deck` on every list.
+7. `finalize_deck`.
+
+Throughout, the skill requires card facts from tools only, an "as of" date with points or bans, and rulings and combos marked as unverified.
+
+**YGOResources terms (checked 2026-10-20).**
+- `db.ygoresources.com/about/api` documents a public JSON API:
+  - `/data/card/<konami id>`: card data, the FAQ, and the IDs of the card's Q&A entries.
+  - `/data/qa/<id>`: Q&A entries in English and Japanese, with card cross-references.
+  - Name-to-ID indexes per language.
+  - An `X-Cache-Revision` header and a `/manifest/<revision>` change feed.
+- Conditions:
+  - Request only what you need and cache it locally.
+  - Don't slow the servers; they reserve the right to act against code that does.
+  - For a full offline copy, ask them (Discord) instead of crawling.
+- No license, attribution or redistribution terms are stated.
+- **Conclusion:** fine for on-demand, per-card fetches cached in `cards.sqlite` and refreshed through the manifest. Don't bulk-crawl or redistribute the Q&A text. Ask on their Discord before any bulk use.
+
+**Next:** a `card_rulings(card)` tool on that basis. Konami IDs are already stored as `cards.konami_id`.

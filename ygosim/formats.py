@@ -145,7 +145,10 @@ def resolve(con: sqlite3.Connection, query: str) -> tuple[int | None, str]:
     Never guesses: anything fuzzier comes back as an error with candidates."""
     q = query.strip()
     if q.isdigit():
-        return int(q), ""
+        # A passcode, unless no such passcode exists and a card has this name (there is a card named "7").
+        known = con.execute("SELECT 1 FROM cards WHERE passcode = ?", (int(q),)).fetchone()
+        named = con.execute("SELECT canonical_id FROM cards WHERE name = ? LIMIT 1", (q,)).fetchone()
+        return (named[0], "") if named and not known else (int(q), "")
     rows = con.execute("SELECT DISTINCT canonical_id, name FROM cards WHERE name = ?", (q,)).fetchall()
     if not rows:
         rows = con.execute("SELECT DISTINCT canonical_id, name FROM cards WHERE name_norm = ?",

@@ -7,7 +7,7 @@ from typing import Literal
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
-from . import carddata, cardtools, formatmeta, linkfind
+from . import carddata, cardtools, decksave, formatmeta, linkfind
 from .formats import DeckInputError, validate_deck as _validate
 
 Format = Literal["tcg_advanced", "genesys"]
@@ -180,6 +180,32 @@ def validate_deck(
     if "error" in result:
         return {"legal": None, "summary": f"NOT VALIDATED: {result.pop('error')}", **result}
     return result
+
+
+@server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True,
+                                         openWorldHint=True))
+def finalize_deck(
+    format: Format,
+    name: str,
+    decklist: dict[str, list[str]] | None = None,
+    ydk_path: str | None = None,
+    ydk_text: str | None = None,
+    point_cap: int | None = None,
+    notes: str | None = None,
+) -> dict:
+    """Save a finished deck, but only if validate_deck says it is legal (otherwise nothing is written
+    and the problems come back). Writes data/decks/<name>.<format>.ydk and a .json with the ydke:// URL,
+    a text decklist, the points or ban breakdown and the data "as of" date. Saving the same name again
+    keeps the previous .ydk in data/decks/history/. Follow-up questions can pass the returned ydk path to
+    validate_deck or find_links."""
+    return _call(decksave.finalize_deck, format, name, decklist=decklist, ydk_path=ydk_path,
+                 ydk_text_in=ydk_text, point_cap=point_cap, notes=notes)
+
+
+@server.tool(annotations=READ_ONLY)
+def saved_decks(format: Format | None = None) -> dict:
+    """Decks saved with finalize_deck, newest first: name, format, saved_at, summary, .ydk path, ydke URL."""
+    return _call(decksave.saved_decks, format=format)
 
 
 def main():
