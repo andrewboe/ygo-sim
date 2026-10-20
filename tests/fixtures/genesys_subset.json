@@ -827,6 +827,440 @@
 "genesys_ocg_points": 0
 }
 ]
+},
+{
+"id": 9411399,
+"name": "Destiny HERO - Malicious",
+"typeline": [
+"Warrior",
+"Effect"
+],
+"type": "Effect Monster",
+"humanReadableCardType": "Effect Monster",
+"frameType": "effect",
+"desc": "You can banish this card from your GY; Special Summon 1 \"Destiny HERO - Malicious\" from your Deck.",
+"race": "Warrior",
+"atk": 800,
+"def": 800,
+"level": 6,
+"attribute": "DARK",
+"archetype": "Destiny HERO",
+"card_images": [
+{
+"id": 9411399
+}
+],
+"misc_info": [
+{
+"tcg_date": "2007-02-07",
+"ocg_date": "2006-10-26",
+"konami_id": 6949,
+"genesys_points": 0
+}
+]
+},
+{
+"id": 13093792,
+"name": "Destiny HERO - Diamond Dude",
+"typeline": [
+"Warrior",
+"Effect"
+],
+"type": "Effect Monster",
+"humanReadableCardType": "Effect Monster",
+"frameType": "effect",
+"desc": "Once per turn: You can excavate the top card of your Deck, and if it is a Normal Spell, send it to the GY, otherwise place it on the bottom of your Deck. During the Main Phase of your next turn, you can activate the effect of that Spell in your GY (even if you no longer control this face-up card).",
+"race": "Warrior",
+"atk": 1400,
+"def": 1600,
+"level": 4,
+"attribute": "DARK",
+"archetype": "Destiny HERO",
+"card_images": [
+{
+"id": 13093792
+}
+],
+"misc_info": [
+{
+"tcg_date": "2006-05-17",
+"ocg_date": "2006-02-16",
+"konami_id": 6660,
+"genesys_points": 0
+}
+]
+},
+{
+"id": 26964762,
+"name": "Destiny HERO - Dark Angel",
+"typeline": [
+"Warrior",
+"Effect"
+],
+"type": "Effect Monster",
+"humanReadableCardType": "Effect Monster",
+"frameType": "effect",
+"desc": "If you have 3 or more \"Destiny HERO\" monsters in your GY: You can discard this card, then target 1 \"Destiny HERO\" monster in your GY; Special Summon it to your opponent's field in Defense Position. When a Spell Card or effect you activate resolves, negate that effect, and if you do, or if it did not have an effect, destroy that card. During your Standby Phase: You can banish this card and 1 \"Destiny HERO\" monster from your GY; each player chooses 1 Normal Spell from their Deck, and places it on top of their Deck.",
+"race": "Warrior",
+"atk": 0,
+"def": 0,
+"level": 1,
+"attribute": "DARK",
+"archetype": "Destiny HERO",
+"card_images": [
+{
+"id": 26964762
+}
+],
+"misc_info": [
+{
+"tcg_date": "2016-11-17",
+"ocg_date": "2016-08-06",
+"konami_id": 12706,
+"genesys_points": 100
+}
+]
+},
+{
+"id": 53527835,
+"name": "Dark City",
+"type": "Spell Card",
+"humanReadableCardType": "Field Spell",
+"frameType": "spell",
+"desc": "When a \"Destiny HERO\" monster attacks, if its ATK is lower than the ATK of the attack target, the attacking monster gains 1000 ATK during damage calculation only.",
+"race": "Field",
+"archetype": "Destiny HERO",
+"card_images": [
+{
+"id": 53527835
+}
+],
+"misc_info": [
+{
+"tcg_date": "2006-08-16",
+"ocg_date": "2006-05-18",
+"konami_id": 6758,
+"genesys_points": 0
+}
+]
+},
+{
+"id": 45809008,
+"name": "Destiny Draw",
+"type": "Spell Card",
+"humanReadableCardType": "Normal Spell",
+"frameType": "spell",
+"desc": "Discard 1 \"Destiny HERO\" card; draw 2 cards.",
+"race": "Normal",
+"archetype": "Destiny HERO",
+"card_images": [
+{
+"id": 45809008
+}
+],
+"misc_info": [
+{
+"tcg_date": "2007-02-07",
+"ocg_date": "2006-10-26",
+"konami_id": 6950,
+"genesys_points": 0
+}
+]
+},
+{
+"id": 40044918,
+"name": "Elemental HERO Stratos",
+"typeline": [
+"Warrior",
+"Effect"
+],
+"type": "Effect Monster",
+"humanReadableCardType": "Effect Monster",
+"frameType": "effect",
+"desc": "When this card is Normal or Special Summoned: You can activate 1 of these effects.\r\n● Destroy Spells/Traps on the field, up to the number of \"HERO\" monsters you control, except this card.\r\n● Add 1 \"HERO\" monster from your Deck to your hand.",
+"race": "Warrior",
+"atk": 1800,
+"def": 300,
+"level": 4,
+"attribute": "WIND",
+"archetype": "Elemental HERO",
+"card_images": [
+{
+"id": 40044918
+},
+{
+"id": 40044919
+}
+],
+"misc_info": [
+{
+"tcg_date": "2007-04-21",
+"ocg_date": "2006-08-19",
+"konami_id": 6784,
+"genesys_points": 0
+}
+]
+},
+{
+"id": 40591390,
+"name": "Destiny HERO - Dreadmaster",
+"typeline": [
+"Warrior",
+"Effect"
+],
+"type": "Effect Monster",
+"humanReadableCardType": "Effect Monster",
+"frameType": "effect",
+"desc": "If this card is Special Summoned by \"Clock Tower Prison\": Destroy all monsters you control, except \"Destiny HERO\" monsters, also, after that, you can Special Summon up to 2 \"Destiny HERO\" monsters from your GY. After this card is Special Summoned, for the rest of this turn, \"Destiny HERO\" monsters you control cannot be destroyed, also you take no battle damage when they battle. The ATK/DEF of this card are equal to the combined original ATK of all other \"Destiny HERO\" monsters you control.",
+"race": "Warrior",
+"atk": -1,
+"def": -1,
+"level": 8,
+"attribute": "DARK",
+"archetype": "Destiny HERO",
+"card_images": [
+{
+"id": 40591390
+}
+],
+"misc_info": [
+{
+"tcg_date": "2006-05-17",
+"ocg_date": "2006-02-16",
+"konami_id": 6661,
+"genesys_points": 0
+}
+]
+},
+{
+"id": 52947044,
+"name": "Fusion Destiny",
+"type": "Spell Card",
+"humanReadableCardType": "Normal Spell",
+"frameType": "spell",
+"desc": "Fusion Summon 1 Fusion Monster from your Extra Deck that lists a \"Destiny HERO\" monster as material, using monsters from your hand or Deck as Fusion Material, but destroy it during the End Phase of the next turn, also for the rest of this turn after this card resolves, you cannot Special Summon monsters, except DARK \"HERO\" monsters. You can only activate 1 \"Fusion Destiny\" per turn.",
+"race": "Normal",
+"archetype": "Destiny HERO",
+"card_images": [
+{
+"id": 52947044
+}
+],
+"misc_info": [
+{
+"tcg_date": "2019-05-02",
+"ocg_date": "2019-01-12",
+"konami_id": 14304,
+"genesys_points": 3
+}
+]
+},
+{
+"id": 60461804,
+"name": "Destiny HERO - Destroyer Phoenix Enforcer",
+"typeline": [
+"Warrior",
+"Fusion",
+"Effect"
+],
+"type": "Fusion Monster",
+"humanReadableCardType": "Fusion Effect Monster",
+"frameType": "fusion",
+"desc": "1 Level 6 or higher \"HERO\" monster + 1 \"Destiny HERO\" monster\r\nMonsters your opponent controls lose 200 ATK for each \"HERO\" card in your GY. You can only use each of the following effects of \"Destiny HERO - Destroyer Phoenix Enforcer\" once per turn. (Quick Effect): You can destroy both 1 card you control and 1 card on the field. If this card is destroyed by battle or card effect: You can activate this effect; Special Summon 1 \"Destiny HERO\" monster from your GY during the Standby Phase of the next turn.",
+"race": "Warrior",
+"atk": 2500,
+"def": 2100,
+"level": 8,
+"attribute": "DARK",
+"archetype": "Destiny HERO",
+"card_images": [
+{
+"id": 60461804
+}
+],
+"misc_info": [
+{
+"beta_name": "Destiny HERO - Destroy Phoenix Enforcer",
+"tcg_date": "2021-11-04",
+"ocg_date": "2021-07-17",
+"konami_id": 16524,
+"genesys_points": 7
+}
+]
+},
+{
+"id": 90579153,
+"name": "Destiny HERO - Dystopia",
+"typeline": [
+"Warrior",
+"Fusion",
+"Effect"
+],
+"type": "Fusion Monster",
+"humanReadableCardType": "Fusion Effect Monster",
+"frameType": "fusion",
+"desc": "2 \"Destiny HERO\" monsters\r\nIf this card is Special Summoned: You can target 1 Level 4 or lower \"Destiny HERO\" monster in your GY; inflict damage to your opponent equal to that target's ATK. If this card's current ATK is different from its original ATK (except during the Damage Step) (Quick Effect): You can target 1 card on the field; destroy it, and if you do, this card's ATK becomes equal to this card's original ATK. You can only use each effect of \"Destiny HERO - Dystopia\" once per turn.",
+"race": "Warrior",
+"atk": 2800,
+"def": 2400,
+"level": 8,
+"attribute": "DARK",
+"archetype": "Destiny HERO",
+"card_images": [
+{
+"id": 90579153
+}
+],
+"misc_info": [
+{
+"tcg_date": "2016-11-17",
+"ocg_date": "2016-08-06",
+"konami_id": 12705,
+"genesys_points": 0
+}
+]
+},
+{
+"id": 24094653,
+"name": "Polymerization",
+"type": "Spell Card",
+"humanReadableCardType": "Normal Spell",
+"frameType": "spell",
+"desc": "Fusion Summon 1 Fusion Monster from your Extra Deck, using monsters from your hand or field as Fusion Material.",
+"race": "Normal",
+"card_images": [
+{
+"id": 24094653
+},
+{
+"id": 27847700
+}
+],
+"misc_info": [
+{
+"tcg_date": "2002-03-08",
+"ocg_date": "1999-03-06",
+"konami_id": 4837,
+"genesys_points": 0
+}
+]
+},
+{
+"id": 50720316,
+"name": "Elemental HERO Shadow Mist",
+"typeline": [
+"Warrior",
+"Effect"
+],
+"type": "Effect Monster",
+"humanReadableCardType": "Effect Monster",
+"frameType": "effect",
+"desc": "If this card is Special Summoned: You can add 1 \"Change\" Quick-Play Spell Card from your Deck to your hand. If this card is sent to the GY: You can add 1 \"HERO\" monster from your Deck to your hand, except \"Elemental HERO Shadow Mist\". You can only use 1 \"Elemental HERO Shadow Mist\" effect per turn, and only once that turn.",
+"race": "Warrior",
+"atk": 1000,
+"def": 1500,
+"level": 4,
+"attribute": "DARK",
+"archetype": "Elemental HERO",
+"card_images": [
+{
+"id": 50720316
+}
+],
+"misc_info": [
+{
+"tcg_date": "2015-01-29",
+"ocg_date": "2014-06-21",
+"konami_id": 11308,
+"genesys_points": 0
+}
+]
+},
+{
+"id": 21143940,
+"name": "Mask Change",
+"type": "Spell Card",
+"humanReadableCardType": "Quick-Play Spell",
+"frameType": "spell",
+"desc": "Target 1 \"HERO\" monster you control; send it to the GY, also, after that, if it left the field by this effect, Special Summon 1 \"Masked HERO\" monster from your Extra Deck with the same Attribute that the sent monster had when it was on the field (its original Attribute, if face-down).",
+"race": "Quick-Play",
+"archetype": "Change",
+"card_images": [
+{
+"id": 21143940
+}
+],
+"misc_info": [
+{
+"tcg_date": "2011-08-12",
+"ocg_date": "2010-12-18",
+"konami_id": 9066,
+"genesys_points": 0
+}
+]
+},
+{
+"id": 32807846,
+"name": "Reinforcement of the Army",
+"type": "Spell Card",
+"humanReadableCardType": "Normal Spell",
+"frameType": "spell",
+"desc": "Add 1 Level 4 or lower Warrior monster from your Deck to your hand.",
+"race": "Normal",
+"banlist_info": {
+"ban_tcg": "Limited",
+"ban_ocg": "Limited",
+"ban_goat": "Semi-Limited"
+},
+"card_images": [
+{
+"id": 32807846
+}
+],
+"misc_info": [
+{
+"tcg_date": "2003-06-06",
+"ocg_date": "2001-09-20",
+"konami_id": 5328,
+"genesys_points": 18
+}
+]
+},
+{
+"id": 84013237,
+"name": "Number 39: Utopia",
+"typeline": [
+"Warrior",
+"Xyz",
+"Effect"
+],
+"type": "XYZ Monster",
+"humanReadableCardType": "Xyz Effect Monster",
+"frameType": "xyz",
+"desc": "2 Level 4 monsters\r\nWhen a monster declares an attack: You can detach 1 material from this card; negate the attack. If this card is targeted for an attack, while it has no material: Destroy this card.",
+"race": "Warrior",
+"atk": 2500,
+"def": 2000,
+"level": 4,
+"attribute": "LIGHT",
+"archetype": "Utopia",
+"card_images": [
+{
+"id": 84013237
+},
+{
+"id": 84013238
+}
+],
+"misc_info": [
+{
+"beta_name": "Number 39",
+"tcg_date": "2011-07-08",
+"ocg_date": "2011-03-19",
+"konami_id": 9575,
+"genesys_points": 0
+}
+]
 }
 ]
 }

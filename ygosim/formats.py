@@ -153,6 +153,9 @@ def resolve(con: sqlite3.Connection, query: str) -> tuple[int | None, str]:
     if not rows:
         rows = con.execute("SELECT DISTINCT canonical_id, name FROM cards WHERE name_loose = ?",
                            (loose_name(q),)).fetchall()
+    if not rows:  # pre-release / unofficial name
+        rows = con.execute("SELECT DISTINCT canonical_id, name FROM cards WHERE beta_name = ? COLLATE NOCASE",
+                           (q,)).fetchall()
     if len(rows) == 1:
         name = rows[0]["name"]
         return rows[0]["canonical_id"], (f"'{q}' -> '{name}'" if name != q else "")
@@ -321,3 +324,28 @@ def _points(con: sqlite3.Connection, spec: FormatSpec, cid: int) -> int:
         return 0
     r = con.execute("SELECT points FROM points WHERE format = ? AND canonical_id = ?", (spec.points, cid)).fetchone()
     return r["points"] if r else 0
+
+
+def card_status(con: sqlite3.Connection, spec: FormatSpec, c: sqlite3.Row, day: date | None = None) -> dict:
+    """One canonical card's standing in a format: playable copies, points, and why not if not."""
+    day = day or date.today()
+    cid = c["canonical_id"]
+    out: dict = {"limit": _limit(con, spec, cid)}
+    if spec.limits:
+        out["status"] = BAN_LABEL[out["limit"]]
+    if spec.points:
+        out["points"] = _points(con, spec, cid)
+    why = []
+    released = c["tcg_date"] if spec.region == "tcg" else c["ocg_date"]
+    if released is None or date.fromisoformat(released) > day:
+        why.append(f"not {spec.region.upper()}-released ({released or 'no ' + spec.region.upper() + ' release'})")
+    if bad := _frame_parts(c["frame_type"]) & spec.banned_frames:
+        why.append(f"{'/'.join(sorted(bad)).title()} Monster")
+    if c["type"] in spec.banned_types:
+        why.append(c["type"])
+    if out["limit"] == 0:
+        why.append("Forbidden")
+    out["legal"] = not why
+    if why:
+        out["why_not"] = why
+    return out

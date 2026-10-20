@@ -8,6 +8,8 @@ Tables:
   limits(format, canonical_id, lim, ygoprodeck, ignis)            only restricted cards
   points(format, canonical_id, points)                            only pointed cards
   points_history(fetch_id, format, canonical_id, old, new)        rows only when points change
+  mentions(canonical_id, mention)                                 every "quoted" name in a card's text
+  cards_fts(canonical_id, name, desc)                             FTS5 over canonical cards
   fetches(fetch_id, fetched_at, checked_at, db_version, ...)      one row per rebuild
 """
 import json
@@ -19,10 +21,13 @@ from pathlib import Path
 
 from .api import CARDINFO_URL, CARDSETS_URL, DATA_DIR, IGNIS_TCG_LFLIST_URL, cached, get_json, get_text
 from .banlist import parse_lflist
+from .links import extract_all
 
 DB_PATH = DATA_DIR / "cards.sqlite"
 DBVER_URL = "https://db.ygoprodeck.com/api/v7/checkDBVer.php"
 BAN_LIMIT = {"Forbidden": 0, "Limited": 1, "Semi-Limited": 2}
+QUOTED = re.compile(r'"([^"]+)"')  # Konami text quotes card and archetype names
+SCHEMA_VERSION = 3 # bump when build() fills new tables; older indexes are rebuilt
 CHECK_EVERY = timedelta(hours=24)  # ask YGOProDeck for its DB version at most this often
 STALE_AFTER = timedelta(days=7)  # unverified for this long -> answers say stale
 
@@ -41,6 +46,9 @@ CREATE TABLE IF NOT EXISTS points (
   format TEXT, canonical_id INTEGER, points INTEGER, PRIMARY KEY (format, canonical_id));
 CREATE TABLE IF NOT EXISTS points_history (
   fetch_id INTEGER, format TEXT, canonical_id INTEGER, old INTEGER, new INTEGER);
+CREATE TABLE IF NOT EXISTS mentions (canonical_id INTEGER, mention TEXT);
+CREATE INDEX IF NOT EXISTS mentions_m ON mentions(mention);
+CREATE VIRTUAL TABLE IF NOT EXISTS cards_fts USING fts5(canonical_id UNINDEXED, name, desc);
 CREATE TABLE IF NOT EXISTS fetches (
   fetch_id INTEGER PRIMARY KEY AUTOINCREMENT, fetched_at TEXT, checked_at TEXT,
   db_version TEXT, db_last_update TEXT, remote_version TEXT, ignis_title TEXT, cards INTEGER);
@@ -119,19 +127,25 @@ def build(con: sqlite3.Connection, dump: dict, lflist_text: str, set_dates: dict
             (fetched_at, fetched_at, db_version.get("database_version"), db_version.get("last_update"),
              db_version.get("database_version"), ignis_title, len(dump["data"])))
         fetch_id = cur.lastrowid
-        for t in ("cards", "limits", "points"):
+        for t in ("cards", "limits", "points", "mentions", "cards_fts"):
             con.execute(f"DELETE FROM {t}")
         con.executemany(f"INSERT INTO cards VALUES ({','.join('?' * 19)})", cards)
         con.executemany("INSERT INTO limits VALUES ('tcg',?,?,?,?)",
                         [(cid, min(ygopd.get(cid, 3), ignis.get(cid, 3)), ygopd.get(cid, 3), ignis.get(cid, 3))
                          for cid in ygopd.keys() | ignis.keys()])
         con.executemany("INSERT INTO points VALUES (?,?,?)", [(f, cid, p) for (f, cid), p in points.items()])
+        con.executemany("INSERT INTO cards_fts VALUES (?,?,?)",
+                        [(c["id"], c["name"], c.get("desc", "")) for c in dump["data"]])
+        con.executemany("INSERT INTO mentions VALUES (?,?)",
+                        [(c["id"], m) for c in dump["data"] for m in sorted(set(QUOTED.findall(c.get("desc", ""))))])
         if old_points:  # the first build is the baseline, not a change
             fmts = {f for f, _ in points} & {f for f, _ in old_points}  # a missing format is not a change
             changes = [(fetch_id, f, cid, old_points.get((f, cid), 0), points.get((f, cid), 0))
                        for f, cid in old_points.keys() | points.keys()
                        if f in fmts and old_points.get((f, cid), 0) != points.get((f, cid), 0)]
             con.executemany("INSERT INTO points_history VALUES (?,?,?,?,?)", changes)
+        con.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+    extract_all(con)  # the link-graph pass over every card's text
     return fetch_id
 
 
@@ -159,7 +173,8 @@ def ensure_fresh(con: sqlite3.Connection, force: bool = False) -> str:
     """Build if empty; otherwise, at most once per CHECK_EVERY, rebuild only if YGOProDeck's DB version moved.
     Never raises on network errors when a usable index exists; the freshness block reports it."""
     last = latest_fetch(con)
-    if last is None or force:
+    old_schema = con.execute("PRAGMA user_version").fetchone()[0] < SCHEMA_VERSION
+    if last is None or force or old_schema:
         fetch_and_build(con)
         return "built"
     if _now() - datetime.fromisoformat(last["checked_at"]) < CHECK_EVERY:

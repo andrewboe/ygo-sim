@@ -247,3 +247,76 @@ Plus:
 2. This doc lives at `docs/format_mcp_scope.md`.
 3. Open: replace `data/cards.json` with the Genesys dump everywhere, or keep both. For now the format layer uses its own `data/cards.sqlite` built from the Genesys dump, and the existing simulator code is untouched.
 4. Open: confirm which "Eclipse" card the mistake referred to (the tests use Eclipse Wyvern).
+
+## 11. Deckbuilding tools and link graph (approved 2026-10-20)
+
+Goal: conversations like "build me a Destiny HERO deck for the current Genesys meta", then "find bridges into other engines without going over the points". Every tool takes `format` (`tcg_advanced` or `genesys`). The Advanced checks use the F&L list where Genesys uses points.
+
+**Why not a vector DB as the core.** A link is a precise fact: card A searches "a Level 4 or lower DARK Warrior", and card B is one. Embeddings find text that sounds similar and return plausible near-misses, which is the failure this server exists to stop. Embeddings remain an optional `similar_cards` side tool: numpy brute force over about 14k vectors, inside this server, with no separate vector DB.
+
+### Step 1: search and meta
+
+| Tool | Purpose |
+|---|---|
+| `search_cards(text, name, archetype, mentions, kind, attribute, race, level_min/max, max_points, format, limit)` | SQLite FTS5 over card text plus structured filters. Only cards legal in `format` are returned unless `include_illegal`. |
+| `card_lookup(query, format)` | Full text, stats, ban status and points for both formats, alt passcodes, rulings links |
+| `archetype(name, format)` | Members, with points or limits, plus non-member cards whose text names the archetype in quotes |
+| `meta_snapshot(format, days)` | Deck-type shares in recent tops (Yugioh Meta top-decks; Genesys events for `genesys`, TCG non-Genesys for Advanced), with how many lists are still legal under the current list or points |
+| `meta_inclusion(format, card | deck_type, days)` | For a card: share of lists and average copies, by deck type. For a deck type: its card inclusion table. |
+
+### Step 2: link graph
+
+1. **Facts per card, built at refresh:**
+   - What it **is**: archetype, attribute, race, level, kind.
+   - What its effects **reach**: the filters on add-to-hand, Special Summon, send-to-GY and banish targets, and from where.
+   - What it **requires**: materials and summon conditions.
+   - **Locks**: "you cannot Special Summon, except …".
+2. **`links(src, dst, kind, evidence)`** is an indexed join of "reaches" against "is", with the matched text as evidence.
+3. **Extraction:**
+   - Rules handle the common Konami text patterns.
+   - An optional batched LLM pass (cached by text hash) handles what the rules miss.
+   - EDOPro Lua script filters are an optional cross-check.
+   - Hand-audit about 50 cards (D-HERO first) before anything relies on it.
+4. **`find_links(cards or deck, format, budget, direction)`** returns ranked bridges with evidence. It respects locks and the points or limits left, and flags ruling-sensitive patterns: cost vs. "by card effect", "if this card is Special Summoned" timing, hard once-per-turn, locks.
+
+### Step 3 and later
+
+- The LLM extraction pass and the script cross-check.
+- `finalize_deck`: must pass validation, then writes `.ydk`, `ydke://`, text and a breakdown to `decks/` with an "as of" date.
+- A deckbuilding skill that enforces the order meta → archetype → find_links → validate → finalize.
+
+**Rulings** stay "flagged and linked" (YGOrganization and Konami DB links per card) until a usable source is confirmed. There's no rulings API.
+
+### Status (2026-10-20): steps 1 and 2 built
+
+**Tools.** `search_cards`, `card_lookup`, `archetype`, `meta_snapshot`, `meta_inclusion`, `find_links`, `validate_deck` (stdio MCP `ygo-format`).
+
+**Code.**
+- `ygosim/cardtools.py`: search, lookup, archetype.
+- `ygosim/formatmeta.py`: Yugioh Meta lists stored in `meta_lists` / `meta_cards`, a 120-day pull refreshed every 12 h.
+- `ygosim/links.py`: the extraction rules.
+- `ygosim/linkfind.py`: `find_links`.
+- Tests: `tests/test_cardtools.py`, `tests/test_links.py`. Together with `test_formats.py`, 45 tests pass.
+
+**Differences from the plan:**
+- **No stored `links` table.** Filters are stored per card (`effects`, `materials`, `locks`) and joined on demand. A whole-deck `find_links` takes about 1 s and always reflects the current format and budget.
+- **Archetype membership is by name** (case-sensitive game rule). YGOProDeck's tag also covers support cards (Dark City is tagged Destiny HERO), so tag-only cards are listed as support.
+- **Bridges rank names, archetypes and quoted mentions over Attribute/Type matches.** An effect that reaches more than 8 archetypes counts as a hub, not a bridge (anything named "…Fusion", for example).
+
+**Audit (full pass over 14,388 cards: 5,662 reach effects, 2,176 material lines, 579 locks):**
+- **Recall:** 4,484 of 4,637 cards (96.7%) with a counted reach phrase ("add 1 …", "Special Summon 1 …") have it extracted. The rest are mostly the generic "1 card". "This card" self-summons are not links by design.
+- **Precision:**
+  - Of 30 random effects, 27 are exactly right. Three were over-broad or missed a match (non-Ritual, Flip, a `" Dragonmaid "` spacing quirk in the data), and all three are now fixed.
+  - Of 12 locks, 12 are right.
+  - Of 15 material lines, 15 are right.
+  - 97% of Extra Deck monsters have parsed materials. Pendulum Extra Deck monsters and `"A" or "B"` components were fixed.
+- **Known gaps:**
+  - Fusion Summon spells (e.g. Fusion Destiny's "lists a 'Destiny HERO' monster as material") are not reach effects yet.
+  - Level sums for Synchro and achievability of summons are not modelled.
+  - "That mentions it" pronouns are not resolved.
+
+**Meta findings:**
+- 374 Genesys lists and 672 TCG Advanced lists in the last 60 days. Seven Yugioh Meta card names don't match YGOProDeck names (translation variants such as "Stellarnova Binding" vs. "Stellarnova Bonds"). They are reported, never guessed.
+- Only 124 of 374 recent Genesys lists fit today's points. Points must have risen after those events: a 2026-09-27 Sacred Beast top 8 now costs 379. Konami's official Genesys page shows the same values as YGOProDeck.
+
+**Rulings source found:** YGOResources (formerly the YGOrg DB) serves per-card JSON with `faqData` and a `qaIndex`, at `db.ygoresources.com/data/card/<konami_id>`. Its terms of use still need checking before using it in step 3.
