@@ -3,6 +3,7 @@
   bool lite_ = false;
   int64_t duel_seed_ = -1;
   bool ygosim_replay_ = false;  // set per step by the replay flag (action + 1000)
+  bool shuffle1_ = true;  // false: player 0's deck is stacked in file order (last main-deck line on top)
   bool shuffle2_ = true;  // false: player 1's deck is stacked in file order (last main-deck line on top)
   int ygosim_idle_spins_ = 0;
   uint32_t ygosim_pos_code_ = 0;  // card of the pending MSG_SELECT_POSITION

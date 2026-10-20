@@ -280,7 +280,7 @@ PATCHES = [
      "                    \"max_multi_select\"_.Bind(5), \"record\"_.Bind(false));",
      "                    \"max_multi_select\"_.Bind(5), \"record\"_.Bind(false),\n"
      "                    \"lite\"_.Bind(false), \"duel_seed\"_.Bind(int64_t(-1)),\n"
-     "                    \"shuffle2\"_.Bind(true));"),
+     "                    \"shuffle1\"_.Bind(true), \"shuffle2\"_.Bind(true));"),
     # Effect descriptions of activation options (WindBot's ActivateDescription): idle activations, chains.
     ("edopro/edopro.h",
      "          option.push_back('a' + activate_count[spec] - 1);\n        }\n        options_.push_back(option);\n",
@@ -294,7 +294,7 @@ PATCHES = [
     ("edopro/edopro.h", "      auto code = read_u32();\n      auto valid_pos = read_u8();\n",
      "      auto code = read_u32();\n      auto valid_pos = read_u8();\n      ygosim_pos_code_ = code;\n"),
     ("edopro/edopro.h", "      load_deck(i);\n",
-     "      load_deck(i, i != 1 || shuffle2_);  // ygosim: stacked opponent deck for controlled hands\n"),
+     "      load_deck(i, i == 1 ? shuffle2_ : shuffle1_);  // ygosim: stacked decks for controlled hands\n"),
     ("edopro/edopro.h",
      "        \"info:win_reason\"_.Bind(Spec<int>({}, {-1, 1})));",
      "        \"info:win_reason\"_.Bind(Spec<int>({}, {-1, 1})),\n"
@@ -334,7 +334,7 @@ PATCHES = [
      "        verbose_(spec.config[\"verbose\"_]), record_(spec.config[\"record\"_]),",
      "        verbose_(spec.config[\"verbose\"_]), record_(spec.config[\"record\"_]),\n"
      "        lite_(spec.config[\"lite\"_]), duel_seed_(spec.config[\"duel_seed\"_]),\n"
-     "        shuffle2_(spec.config[\"shuffle2\"_]),"),
+     "        shuffle1_(spec.config[\"shuffle1\"_]), shuffle2_(spec.config[\"shuffle2\"_]),"),
     ("edopro/edopro.h",
      "  void Reset() override {\n",
      "  void Reset() override {\n"
