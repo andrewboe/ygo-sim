@@ -7,7 +7,7 @@ from typing import Literal
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
-from . import carddata, cardtools, decksave, formatmeta, linkfind, rulings
+from . import carddata, cardtools, decksave, formatmeta, linefinder, linkfind, rulings
 from .formats import DeckInputError, validate_deck as _validate
 
 Format = Literal["tcg_advanced", "genesys"]
@@ -217,6 +217,38 @@ def finalize_deck(
 def saved_decks(format: Format | None = None) -> dict:
     """Decks saved with finalize_deck, newest first: name, format, saved_at, summary, .ydk path, ydke URL."""
     return _call(decksave.saved_decks, format=format)
+
+
+@server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False,
+                                         openWorldHint=False))
+def find_lines(
+    hand: list[str],
+    saved_deck: str | None = None,
+    ydk_path: str | None = None,
+    ydk_text: str | None = None,
+    decklist: dict[str, list[str]] | None = None,
+    depth: str = "normal",
+    executor: str | None = None,
+) -> dict:
+    """Find the turn-1 lines a starting hand makes, going first, by searching the real game engine (EDOPro, run
+    in WSL): the deck is stacked so the hand is exactly these 5 cards, then turn 1 is searched several times from
+    independent starts. Returns a job_id at once (quick ~10 s, normal ~1 min, deep ~2 min); fetch the lines with
+    line_result. hand: 5 card names or passcodes. Deck: exactly one of saved_deck (a name from
+    saved_decks), ydk_path, ydk_text (or ydke:// URL), decklist. executor (optional): "module:Class" of a
+    windbot_decks executor to steer the search (e.g. "windbot_decks.mitsurugi:MitsurugiExecutor").
+    Lines are scored by the interruptions left live after a scripted opponent turn, plus hand traps held: a
+    search result, not a solver; present it as "found by search" and check rulings it relies on with
+    card_rulings."""
+    return _call(linefinder.start, hand, ydk_path=ydk_path, ydk_text=ydk_text, decklist=decklist,
+                 saved_deck=saved_deck, depth=depth, executor=executor)
+
+
+@server.tool(annotations=READ_ONLY)
+def line_result(job_id: str) -> dict:
+    """Result of a find_lines search: status running / done / failed. When done: the hand and up to one line per
+    search start (best first), each with score, the steps in order, the end board, the hand left and the
+    interruptions that stayed live. Cards the engine can't play (new sets without scripts) are reported."""
+    return _call(linefinder.result, job_id)
 
 
 def main():
