@@ -148,7 +148,9 @@ def find_links(
     limit: int = 12,
 ) -> dict:
     """Bridges and support for a deck (or just a few cards), legal in `format` and within budget:
-      into_your_deck      outside cards whose effects add/summon/send/banish/Set your cards (with evidence)
+      your_archetypes_unplayed  members of your archetypes you don't run, with which of your cards fetch
+                          them (reached_by) and which they fetch (reaches_your); check these first
+      into_your_deck     outside cards whose effects add/summon/send/banish/Set your cards (with evidence)
       your_deck_reaches   what your cards can already fetch outside the list, by archetype
       bridges             other engines tied to your deck through those cards
       extra_deck_options  Extra Deck monsters your monsters satisfy the materials of

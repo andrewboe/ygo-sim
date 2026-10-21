@@ -42,7 +42,10 @@ REACH = re.compile(
     r'from\s+(?:among\s+)?(?:your\s+)?'
     rf"(?P<zones>{ZONE}(?:(?:,\s*|\s+or\s+|,\s*or\s+|\s+and/or\s+)(?:your\s+)?{ZONE})*)", re.I)
 LOCK = re.compile(r"cannot Special Summon(?P<mid>[^.;]*?),?\s+except (?P<desc>[^.;]+?)(?=\.|;|$)", re.I)
-TREATED = re.compile(r'always treated as (?:an? )?"([^"]+)"', re.I)
+# 'always treated as a "Magistus" and "Witchcrafter" card': every quoted name in the clause counts.
+TREATED = re.compile(r'always treated as (?:an? )?"[^"]+"'
+                     r'(?:(?: card)?(?:,\s+(?:and\s+|or\s+)?|\s+and\s+|\s+or\s+)(?:an? )?"[^"]+")*', re.I)
+MENTIONS_IT = re.compile(r"\b(that|which) (mentions?|lists?) it\b")
 EXCEPT = re.compile(r'except "([^"]+)"')
 HARD_OPT = re.compile(r"You can only (?:use (?:each|this|the)\b[^.]*?|activate 1 [^.]*?)once per turn|"
                       r"You can only activate 1 \"[^\"]+\" per turn", re.I)
@@ -125,10 +128,14 @@ class Facts:
         return self.frame not in ("spell", "trap", "token", "skill")
 
 
+def treated_as(desc: str) -> tuple[str, ...]:
+    return tuple(q for m in TREATED.finditer(desc) for q in re.findall(r'"([^"]+)"', m.group(0)))
+
+
 def facts_of(row: sqlite3.Row, mentions: frozenset[str]) -> Facts:
     f = Facts(row["canonical_id"], row["name"], row["frame_type"], row["type"], row["race"] or "",
               row["attribute"], row["level"], row["atk"], row["def"],
-              tuple(TREATED.findall(row["desc"] or "")), mentions)
+              treated_as(row["desc"] or ""), mentions)
     parts = set(f.frame.split("_"))
     if f.is_monster:
         f.kinds |= {"monster", "card"} | parts
@@ -195,6 +202,14 @@ def _effect_head(text: str, start: int) -> str:
     return text[head_start:end if end > head_start else start]
 
 
+def _resolve_it(desc: str) -> str:
+    """'"Regulus" or 1 monster that mentions it' -> '... that mentions "Regulus"' (the last quoted name before)."""
+    def sub(m: re.Match) -> str:
+        before = re.findall(r'"([^"]+)"', desc[:m.start()])
+        return f'{m.group(1)} {m.group(2)} "{before[-1]}"' if before else m.group(0)
+    return MENTIONS_IT.sub(sub, desc)
+
+
 def extract_card(desc: str, card_names: frozenset[str]) -> dict:
     """Effects, materials and locks of one card's text."""
     text = (desc or "").replace("\r\n", "\n")
@@ -207,6 +222,7 @@ def extract_card(desc: str, card_names: frozenset[str]) -> dict:
         desc_text = m.group("desc")
         excluded = EXCEPT.findall(desc_text) + EXCEPT.findall(rest)
         desc_text = re.sub(r',?\s*except\s+"[^"]+"', "", desc_text)
+        desc_text = _resolve_it(desc_text)
         for alt in re.split(r",?\s+or\s+(?:1|a|an)\s+", desc_text):
             f = parse_descriptor(alt, card_names)
             if not f:

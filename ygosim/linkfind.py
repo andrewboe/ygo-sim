@@ -1,6 +1,7 @@
 """find_links: cards that connect to a deck, from the link graph in links.py.
 
-Sections: outside cards that reach your cards (searchers, summoners), what your cards already reach
+Sections: members of your archetypes the list doesn't run yet, outside cards that reach your cards
+(searchers, summoners), what your cards already reach
 outside the list (grouped by archetype), bridges into other engines, and Extra Deck monsters your
 monsters can be material for. Everything respects the format (legal cards only) and, for Genesys,
 the points left. Locks in your deck flag suggestions that would break them.
@@ -194,12 +195,56 @@ def find_links(con: sqlite3.Connection, format: str, ydk_path: str | None = None
                     if _strong(e["filter"]):
                         g["strong"].add(t)
                     g["via"].setdefault(pool.facts[d].name, _evidence(e))
+    # Your own archetypes first: support you could run but don't is the most useful find.
     deck_reaches = [
         {"archetype": tag, "count": len(g["cards"]),
          "examples": [_brief(pool, c, spec) for c in
-                      sorted(g["cards"], key=lambda c: (pool.status[c].get("points", 0), pool.facts[c].name))[:5]],
+                      sorted(g["cards"], key=lambda c: (c not in g["strong"], pool.status[c].get("points", 0),
+                                                        pool.facts[c].name))[:5]],
          "via": [{"card": k, **v} for k, v in list(g["via"].items())[:3]]}
-        for tag, g in sorted(groups.items(), key=lambda kv: (kv[0] in deck_tags, -len(kv[1]["cards"])))][:limit]
+        for tag, g in sorted(groups.items(), key=lambda kv: (kv[0] not in deck_tags, -len(kv[1]["strong"]),
+                                                            -len(kv[1]["cards"])))][:limit]
+
+    # B2. members of your archetypes (by tag, name or "always treated as") that the list doesn't run,
+    # ranked by how tightly they connect: your cards that fetch them, and your cards they fetch.
+    def strong_hits(src: int, dst: int) -> dict | None:
+        """src's first add/summon/Set effect (not a cost) that fetches dst by name, archetype or mention."""
+        c = pool.facts[dst]
+        main_only = not ({"fusion", "synchro", "xyz", "link"} & c.kinds) or None
+        for e in pool.effects.get(src, []):
+            if e["cost"] or e["verb"] not in ("add", "summon", "set") or not _strong(e["filter"]) \
+                    or e["filter"].get("names") == [pool.facts[src].name]:
+                continue
+            if not main_only and set(e["zones"].split(",")) <= {"hand", "Deck"}:
+                continue  # an Extra Deck monster is never in your hand or Deck
+            if matches(c, e["filter"]):
+                return e
+        return None
+
+    unplayed = []
+    for cid, c in pool.facts.items():
+        if not ok(cid) or not (pool.tag.get(cid) in deck_tags or any(t in c.name or t in c.treated for t in deck_tags)):
+            continue
+        reached_by = [(d, e) for d in in_deck if (e := strong_hits(d, cid))]
+        reaches = [d for d in in_deck if strong_hits(cid, d)]
+        if reached_by or reaches:
+            unplayed.append([cid, reached_by, reaches])
+    # Links between unplayed members count too (Genni, the Maid -> Verre, the Maid): add them as a pair.
+    cands = [u[0] for u in unplayed]
+    for u in unplayed:
+        u.append([o for o in cands if o != u[0] and strong_hits(u[0], o)])
+    # A two-way link (your cards fetch it and it fetches yours) is the strongest sign it belongs; a link
+    # through another unplayed card counts for less, or broad searchers win on partners alone.
+    def score(u) -> int:
+        _, by, reaches, partners = u
+        return (2 * len(by) + 2 * len(reaches) + min(len(partners), 2)
+                + (3 if by and reaches else 2 if by and partners else 0))
+    unplayed.sort(key=lambda u: (-score(u), pool.status[u[0]].get("points", 0), pool.facts[u[0]].name))
+    own_unplayed = [item(cid, {
+        "reached_by": [{"card": pool.facts[d].name, **_evidence(e)} for d, e in reached_by[:3]],
+        "reaches_your": sorted(pool.facts[d].name for d in reaches)[:6],
+        **({"reaches_unplayed": sorted(pool.facts[o].name for o in partners)[:4]} if partners else {})})
+        for cid, reached_by, reaches, partners in unplayed[:limit]]
 
     # C. bridges: a card tied to your deck that belongs to, or reaches, another archetype
     bridges: dict[str, dict] = {}
@@ -247,6 +292,7 @@ def find_links(con: sqlite3.Connection, format: str, ydk_path: str | None = None
 
     out = {
         "format": spec.title, "deck_cards": len(in_deck), "deck_archetypes": sorted(deck_tags),
+        "your_archetypes_unplayed": own_unplayed,
         "into_your_deck": into_deck, "your_deck_reaches": deck_reaches, "bridges": bridge_list,
         "extra_deck_options": extra_deck,
         "deck_locks": [{"card": src, "lock": lk["evidence"][:200]} for src, lk in deck_locks],

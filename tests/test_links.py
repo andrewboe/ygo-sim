@@ -125,3 +125,29 @@ def test_find_links_with_cards_and_bad_names(con):
     assert "Elemental HERO Stratos" in {x["name"] for x in r["into_your_deck"]}
     r = find_links(con, "tcg_advanced", cards=["D-HERO Malicous"])
     assert r["error"].startswith("input problems") and r["parse_errors"]
+
+
+def test_treated_as_every_quoted_archetype():
+    from ygosim.links import treated_as
+    assert treated_as('(This card is always treated as a "Magistus" and "Witchcrafter" card.)') == \
+        ("Magistus", "Witchcrafter")
+    assert treated_as('(This card is always treated as a "Zubaba", "Gagaga", "Gogogo", and "Dododo" card.)') == \
+        ("Zubaba", "Gagaga", "Gogogo", "Dododo")
+    assert treated_as('(This card is always treated as a "Witchcrafter" card.)') == ("Witchcrafter",)
+
+
+def test_mentions_it_resolves_to_the_named_card():
+    names = NAMES | {"Regulus, the Prince of Endymion"}
+    by_name, by_mention, _ = extract_card(
+        'When this card is activated: Add 1 "Regulus, the Prince of Endymion" or 1 monster that mentions it from '
+        'your Deck to your hand, then you can Special Summon 1 Spellcaster monster from your hand.', names)["effects"]
+    assert by_name["filter"] == {"names": ["Regulus, the Prince of Endymion"]}
+    assert by_mention["filter"] == {"mentions": ["Regulus, the Prince of Endymion"], "kinds": ["monster"]}
+
+
+def test_find_links_lists_own_archetype_cards_not_run(con):
+    r = find_links(con, "genesys", decklist=DHERO, as_of="2026-10-20")
+    unplayed = {x["name"]: x for x in r["your_archetypes_unplayed"]}
+    assert "Destiny HERO - Dreadmaster" in unplayed  # a Destiny HERO the list doesn't run
+    assert "Destiny HERO - Malicious" in unplayed["Destiny HERO - Dreadmaster"]["reaches_your"]
+    assert not set(unplayed) & {"Destiny HERO - Malicious", "Destiny HERO - Diamond Dude"}  # already in the deck
