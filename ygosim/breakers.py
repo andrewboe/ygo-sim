@@ -10,9 +10,9 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from .api import DATA_DIR
-from .banlist import tcg_banlist
-from .cards import by_name, card_db
+from ygoformat.api import DATA_DIR
+from ygoformat.banlist import tcg_banlist
+from ygoformat.cards import by_name, card_db
 from .deck import Deck
 from .field import FOLD_MIN  # noqa: F401  (same pooling rule as variants)
 from .meta import build_meta, card_set, slugify

@@ -14,7 +14,7 @@ import json
 from collections import Counter, defaultdict
 from datetime import date, timedelta
 
-from .api import CARDINFO_URL, CARDSETS_URL, DATA_DIR, cached, get_json
+from ygoformat.api import CARDINFO_URL, CARDSETS_URL, DATA_DIR, cached, get_json
 
 OCG_TO_TCG = timedelta(weeks=13)
 OCG_LISTS = ("tournament_meta_decks_ocg_30d.json", "tournament_meta_decks_ocg_60d.json")

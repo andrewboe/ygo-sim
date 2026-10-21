@@ -4,9 +4,9 @@ from datetime import date
 
 import pytest
 
-from ygosim.api import DATA_DIR
-from ygosim.banlist import parse_lflist, tcg_banlist
-from ygosim.cards import by_name, card_db
+from ygoformat.api import DATA_DIR
+from ygoformat.banlist import parse_lflist, tcg_banlist
+from ygoformat.cards import by_name, card_db
 from ygosim.deck import Deck, IllegalDeckError
 
 ASH = by_name("Ash Blossom & Joyous Spring").id

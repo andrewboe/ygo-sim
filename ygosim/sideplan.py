@@ -10,9 +10,9 @@ At most MAX_SWAPS cards move; swapped-out cards go to the side deck, so totals s
 import json
 from collections import Counter
 
-from .api import DATA_DIR
+from ygoformat.api import DATA_DIR
 from .breakers import CANDIDATES, _hand_trap_ids, load_config
-from .cards import by_name, card_db
+from ygoformat.cards import by_name, card_db
 from .deck import Deck
 
 MAX_SWAPS = 6

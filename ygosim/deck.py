@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-from .banlist import tcg_banlist
-from .cards import card_db
+from ygoformat.banlist import tcg_banlist
+from ygoformat.cards import card_db
 
 
 class IllegalDeckError(RuntimeError):

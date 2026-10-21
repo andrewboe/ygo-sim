@@ -11,8 +11,8 @@ from collections import defaultdict
 from datetime import date
 from pathlib import Path
 
-from .api import DATA_DIR
-from .cards import name
+from ygoformat.api import DATA_DIR
+from ygoformat.cards import name
 from .deck import Deck
 from .meta import slugify
 from .screen import summarize

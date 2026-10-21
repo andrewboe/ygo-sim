@@ -14,9 +14,9 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date
 
-from .api import DATA_DIR
-from .banlist import tcg_banlist
-from .cards import card_db, name
+from ygoformat.api import DATA_DIR
+from ygoformat.banlist import tcg_banlist
+from ygoformat.cards import card_db, name
 from .deck import Deck
 from .meta import Archetype, build_meta, card_set, jaccard, slugify
 

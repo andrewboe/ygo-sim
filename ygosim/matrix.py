@@ -10,7 +10,7 @@ from collections import defaultdict
 
 import numpy as np
 
-from .api import DATA_DIR
+from ygoformat.api import DATA_DIR
 from .match import GameRates, match_win_rate
 
 RESULTS = DATA_DIR / "games" / "results.jsonl"

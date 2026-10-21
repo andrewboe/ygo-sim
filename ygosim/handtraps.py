@@ -7,8 +7,8 @@ the opponent's 6-card hand (5 + their draw); going second, their 5.
 import json
 from math import comb
 
-from .api import DATA_DIR
-from .cards import by_name
+from ygoformat.api import DATA_DIR
+from ygoformat.cards import by_name
 from .deck import Deck
 
 

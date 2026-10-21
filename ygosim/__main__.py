@@ -1,8 +1,8 @@
 import argparse
 from datetime import date
 
-from .api import DATA_DIR
-from .banlist import tcg_banlist
+from ygoformat.api import DATA_DIR
+from ygoformat.banlist import tcg_banlist
 from .field import build_field, export_field
 from .meta import build_meta, export_meta
 from .project import export_projections, project_meta
@@ -146,8 +146,8 @@ def cmd_fit_eval(args):
 def cmd_validate(args):
     import json
 
-    from . import carddata
-    from .formats import validate_deck
+    from ygoformat import carddata
+    from ygoformat.formats import validate_deck
 
     con = carddata.connect()
     carddata.ensure_fresh(con)
@@ -168,7 +168,7 @@ def cmd_validate(args):
 
 
 def cmd_cards_refresh(args):
-    from . import carddata
+    from ygoformat import carddata
 
     con = carddata.connect()
     print(carddata.ensure_fresh(con, force=args.force))

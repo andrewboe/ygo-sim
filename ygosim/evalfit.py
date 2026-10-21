@@ -14,7 +14,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .api import DATA_DIR
+from ygoformat.api import DATA_DIR
 
 POSITIONS = DATA_DIR / "games" / "positions.jsonl"
 WEIGHTS = DATA_DIR / "games" / "eval_weights.json"

@@ -12,7 +12,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import date
 
-from .api import DATA_DIR
+from ygoformat.api import DATA_DIR
 from .deck import Deck
 from .meta import Archetype, card_set, jaccard, slugify
 from .project import Projection, closest_tcg, generic_cards

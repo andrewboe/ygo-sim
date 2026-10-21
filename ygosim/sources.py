@@ -14,8 +14,8 @@ from collections import Counter
 from datetime import date, timedelta
 from functools import cache
 
-from .api import DATA_DIR, DECKS_URL, cached, get_json
-from .cards import card_db
+from ygoformat.api import DATA_DIR, DECKS_URL, cached, get_json
+from ygoformat.cards import card_db
 from .deck import Deck
 
 TCG_FORMAT = "Tournament Meta Decks"

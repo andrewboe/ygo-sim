@@ -8,9 +8,9 @@ import hashlib
 import json
 from datetime import date
 
-from .api import CARDSETS_URL, DATA_DIR, cached, get_json
-from .banlist import tcg_banlist
-from .cards import card_db, name
+from ygoformat.api import CARDSETS_URL, DATA_DIR, cached, get_json
+from ygoformat.banlist import tcg_banlist
+from ygoformat.cards import card_db, name
 from .field import build_field, export_field
 from .meta import build_meta
 from .project import project_meta

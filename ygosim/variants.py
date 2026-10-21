@@ -11,8 +11,8 @@ import json
 from collections import Counter
 from datetime import date
 
-from .api import DATA_DIR
-from .cards import card_db, name
+from ygoformat.api import DATA_DIR
+from ygoformat.cards import card_db, name
 from .field import FOLD_MIN
 from .meta import Archetype, build_meta, card_set, jaccard, slugify
 from .project import generic_cards

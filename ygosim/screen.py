@@ -8,7 +8,7 @@ ranked on each within their deck; stage 2 (games vs the field) combines them int
 import json
 from collections import defaultdict
 
-from .api import DATA_DIR
+from ygoformat.api import DATA_DIR
 
 
 def _field_weight() -> dict[str, float]:

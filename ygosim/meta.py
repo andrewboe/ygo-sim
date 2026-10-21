@@ -12,8 +12,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date
 
-from .api import DATA_DIR
-from .cards import name
+from ygoformat.api import DATA_DIR
+from ygoformat.cards import name
 from .deck import Deck
 
 HALF_LIFE_DAYS = 21

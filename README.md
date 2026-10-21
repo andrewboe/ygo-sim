@@ -3,6 +3,12 @@
 Simulation-driven Yu-Gi-Oh! deck optimization, seeded from the current TCG meta.
 The theory and design live in [docs/THEORY.md](docs/THEORY.md).
 
+Card data, banlist and Genesys legality, format meta, rulings and the `ygo-format` MCP server live in
+[ygo-format](https://github.com/andrewboe/ygo-format), which this package depends on (`ygoformat.api`,
+`ygoformat.cards`, `ygoformat.banlist`, `ygoformat.carddata`, `ygoformat.formats`). The simulator points its
+data folder at this repo's `data/`. The MCP's optional `find_lines` tool runs this repo's `wsl/line_finder.py`
+when `YGOSIM_HOME` names this checkout.
+
 ## Plan
 
 | Phase | What | Runs on |
@@ -54,6 +60,9 @@ python -m venv .venv
 pip install -e .
 ygosim meta --days 60
 ```
+
+`pip install -e .` pulls ygo-format from GitHub. To work on both at once, install a local checkout over it:
+`pip install -e ..\ygo-format`.
 
 Output goes to `data/meta/`: `<archetype>.ydk`, `<archetype>.inclusion.json`, and `summary.json`.
 
